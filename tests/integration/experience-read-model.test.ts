@@ -60,11 +60,13 @@ test("learner and instructor views keep progress, system errors, evidence and co
         ('${id.practiceSkill}', '${id.tenant}', 'ts-narrowing', 'Type Narrowing'),
         ('${id.projectSkill}', '${id.tenant}', 'ts-project', 'TypeScript Project Delivery');
       INSERT INTO cohorts (id, tenant_id, key, name, status)
-        VALUES ('${id.cohort}', '${id.tenant}', 'cohort-a', 'Cohort A', 'ACTIVE');
+        VALUES ('${id.cohort}', '${id.tenant}', 'cohort-a', 'Cohort A', 'DRAFT');
       INSERT INTO cohort_memberships (id, tenant_id, cohort_id, learner_id, status, enrolled_at)
         VALUES ('${id.membership}', '${id.tenant}', '${id.cohort}', '${id.learner}', 'ENROLLED', now());
       INSERT INTO learning_assignments (id, tenant_id, cohort_id, course_version_id, is_primary, assigned_at)
         VALUES ('${id.assignment}', '${id.tenant}', '${id.cohort}', '${id.courseVersion}', true, now());
+      UPDATE cohorts SET status = 'ACTIVE', version = version + 1
+        WHERE id = '${id.cohort}' AND tenant_id = '${id.tenant}';
       INSERT INTO instructor_cohort_roles (id, tenant_id, cohort_id, instructor_id)
         VALUES ('${id.instructorRole}', '${id.tenant}', '${id.cohort}', '${id.instructor}');
       INSERT INTO lesson_progress (id, tenant_id, learner_id, lesson_version_id, state, updated_at)
