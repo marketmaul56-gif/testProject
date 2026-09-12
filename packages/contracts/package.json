@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./experience": "./src/experience.ts",
-    "./ai-coaching": "./src/ai-coaching.ts"
+    "./ai-coaching": "./src/ai-coaching.ts",
+    "./submissions": "./src/submissions.ts"
   },
   "dependencies": {
     "zod": "4.6.2"

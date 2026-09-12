@@ -5,12 +5,21 @@ import { ConsoleAiCoachingTelemetry } from "../../../packages/modules/ai-coachin
 import { OpenAiResponsesAdapter } from "../../../packages/modules/ai-coaching/src/infrastructure/openai-responses-adapter.ts";
 import { UnavailableAiCoachingProvider } from "../../../packages/modules/ai-coaching/src/infrastructure/unavailable-provider.ts";
 import { PgGuidanceWriter } from "../../../packages/modules/cohorts/src/infrastructure/pg-guidance-writer.ts";
+import { PgPracticeSubmissionCommands } from "../../../packages/modules/practice/src/infrastructure/pg-submission-commands.ts";
+import { PgProjectSubmissionCommands } from "../../../packages/modules/projects/src/infrastructure/pg-submission-commands.ts";
 import type { RuntimeConfig } from "../../../packages/platform/config/src/config.ts";
 import { ExperienceReadModel } from "../../../packages/platform/db/src/experience-read-model.ts";
 import { AiCoachingController } from "./ai-coaching.controller.ts";
 import { InstructorExperienceController, LearnerExperienceController } from "./experience.controller.ts";
 import { MeController } from "./me.controller.ts";
-import { AI_COACHING_SERVICE, EXPERIENCE_READ_MODEL, GUIDANCE_WRITER } from "./tokens.ts";
+import { LearnerSubmissionController } from "./submissions.controller.ts";
+import {
+  AI_COACHING_SERVICE,
+  EXPERIENCE_READ_MODEL,
+  GUIDANCE_WRITER,
+  PRACTICE_SUBMISSION_COMMANDS,
+  PROJECT_SUBMISSION_COMMANDS,
+} from "./tokens.ts";
 
 @Module({})
 export class AppModule {
@@ -27,11 +36,14 @@ export class AppModule {
         LearnerExperienceController,
         InstructorExperienceController,
         AiCoachingController,
+        LearnerSubmissionController,
       ],
       providers: [
         { provide: EXPERIENCE_READ_MODEL, useValue: new ExperienceReadModel(pool) },
         { provide: GUIDANCE_WRITER, useValue: new PgGuidanceWriter(pool) },
         { provide: AI_COACHING_SERVICE, useValue: aiCoachingService },
+        { provide: PRACTICE_SUBMISSION_COMMANDS, useValue: new PgPracticeSubmissionCommands(pool) },
+        { provide: PROJECT_SUBMISSION_COMMANDS, useValue: new PgProjectSubmissionCommands(pool) },
       ],
     };
   }

@@ -11,6 +11,11 @@ export type VerifierSandboxPolicy = Readonly<{
   gid: number;
 }>;
 
+export type VerifierSandboxMountSources = Readonly<{
+  workspacePath: string;
+  verificationInputPath: string;
+}>;
+
 export function createVerifierSandboxPolicy(runtimeImageDigest: string): VerifierSandboxPolicy {
   if (!/^sha256:[a-f0-9]{64}$/.test(runtimeImageDigest)) {
     throw new Error("verifier runtime image must be pinned by sha256 digest");
@@ -29,7 +34,18 @@ export function createVerifierSandboxPolicy(runtimeImageDigest: string): Verifie
   });
 }
 
-export function buildOciConfig(policy: VerifierSandboxPolicy): Record<string, unknown> {
+export function buildOciConfig(policy: VerifierSandboxPolicy, sources?: VerifierSandboxMountSources): Record<string, unknown> {
+  const mounts: Record<string, unknown>[] = [
+    { destination: "/proc", type: "proc", source: "proc" },
+    { destination: "/dev", type: "tmpfs", source: "tmpfs", options: ["nosuid", "strictatime", "mode=755", "size=65536k"] },
+    { destination: "/tmp", type: "tmpfs", source: "tmpfs", options: ["nosuid", "nodev", "mode=1777", "size=65536k"] },
+  ];
+  if (sources) {
+    mounts.push(
+      { destination: "/workspace", type: "bind", source: sources.workspacePath, options: ["rbind", "rw", "nosuid", "nodev"] },
+      { destination: "/opt/verification-input", type: "bind", source: sources.verificationInputPath, options: ["rbind", "ro", "nosuid", "nodev", "noexec"] },
+    );
+  }
   return {
     ociVersion: "1.2.0",
     process: {
@@ -47,11 +63,7 @@ export function buildOciConfig(policy: VerifierSandboxPolicy): Record<string, un
     },
     root: { path: "rootfs", readonly: true },
     hostname: "verifier",
-    mounts: [
-      { destination: "/proc", type: "proc", source: "proc" },
-      { destination: "/dev", type: "tmpfs", source: "tmpfs", options: ["nosuid", "strictatime", "mode=755", "size=65536k"] },
-      { destination: "/tmp", type: "tmpfs", source: "tmpfs", options: ["nosuid", "nodev", "mode=1777", "size=65536k"] },
-    ],
+    mounts,
     linux: {
       namespaces: [
         { type: "pid" },
