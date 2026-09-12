@@ -6,10 +6,11 @@ Audit basis:
 - `docs/locked/M3-technology-foundation.md`
 - `docs/locked/M4-engineering-foundation.md`
 - `docs/locked/M12-implementation-release-contract.md`
+- accepted `docs/release/CHANGE-REVIEW-M12.8-PERFORMANCE-BASELINE.md`
 - current repository tree on branch `m12/implementation-foundation`
 - successful M12 CI runs recorded below
 
-The original M12.1 audit began from an empty/bootstrap repository. The repository has since progressed through implementation milestones M12.2–M12.7 and M12.8 test execution. This document is the current implementation trace, not the historical pre-implementation snapshot.
+The original M12.1 audit began from an empty/bootstrap repository. The repository has since progressed through implementation milestones M12.2–M12.8. This document is the current implementation trace, not the historical pre-implementation snapshot.
 
 | ID | Capability | Locked source | Implementation evidence | Test evidence / remaining gate | Release gate | Status |
 |---|---|---|---|---|---|---|
@@ -34,14 +35,14 @@ The original M12.1 audit began from an empty/bootstrap repository. The repositor
 | M12-019 | Migration/rollback | M4.5/M11/M12.9 | version-controlled PostgreSQL migrations + fail-fast migration runner | fresh migration PASS; injected migration failure fail-stop PASS; rollback/recovery rehearsal remains M12.9 | Release | PARTIAL |
 | M12-020 | Backup/restore | M3.9/M11/M12.9 | not yet executed | backup/restore drill required | Release | NOT_IMPLEMENTED |
 | M12-021 | Repository/workspace contract | M3.2/M4.1 | workspace, apps/packages/prisma/docs, architecture checks | architecture CI PASS | Engineering | IMPLEMENTED |
-| M12-022 | CI quality pipeline | M4.6/M4.8/M12.8 | architecture/type/security/contracts/build/migration/experience/authority/cohort/E2E/failure/performance jobs | M12 CI run `34698420579` 9/9 PASS | Testing | IMPLEMENTED |
+| M12-022 | CI quality pipeline | M4.6/M4.8/M12.8 | architecture/type/security/contracts/build/migration/experience/authority/cohort/E2E/failure/performance jobs | M12 CI run `34698980079` 9/9 PASS | Testing | IMPLEMENTED |
 | M12-023 | Structured logging/telemetry baseline | M3.9/M4.9 | security audit + AI telemetry baseline | production observability/alert validation remains M12.9 | Observability | PARTIAL |
 | M12-024 | Production configuration + secret boundaries | M3.9/M4.3/M12.9 | validated runtime config, Better Auth secret boundary, AI key optional/server-side | production configuration and secret deployment validation remains | Deployment | PARTIAL |
 | M12-025 | Learner canonical E2E | M12 mandatory E2E | `tests/e2e/canonical-journey.test.ts` | assignment→lesson→AI outage→practice/project→verification→evidence→competency PASS | Release | IMPLEMENTED |
 | M12-026 | Instructor canonical E2E | M10/M12 mandatory E2E | canonical E2E + experience read model/guidance | cohort→roster→evidence-backed view→formative guidance PASS | Release | IMPLEMENTED |
 | M12-027 | Authority regression suite | M12 mandatory regression | domain/security/authority integration + canonical E2E | retry, outage, evidence failure, false evidence/competency, completion non-authority PASS | Release | IMPLEMENTED |
 | M12-028 | Security regression suite | M11/M12 | negative authorization/input/security + tenant DB constraints + verifier contract | current CI scope PASS; production-like verifier host rehearsal remains M12.9 | Release | PARTIAL |
-| M12-029 | Performance baseline | M11/M12.8 | `tests/performance/read-model-baseline.test.ts` measured 50 learners / 20 lessons / 1000 progress rows | p95 learner 4.57 ms; p95 instructor cohort 29.45 ms; exact M11 numeric target comparison unavailable | Release | BLOCKED |
+| M12-029 | Performance baseline | M11/M12.8 + accepted Change Review | `tests/performance/read-model-baseline.test.ts` asserts approved p95 targets on 50 learners / 20 lessons / 1,000 progress rows | run `34698980079`: learner p95 5.84 ms <= 100 ms; instructor p95 40.39 ms <= 200 ms | Release | IMPLEMENTED |
 | M12-030 | Release candidate/deployment evidence | M12.9/M12.10 | not yet produced | RC, production-like smoke, migration/restore, readiness matrix required | Release | NOT_IMPLEMENTED |
 
 ## Locked implementation milestones
@@ -68,40 +69,29 @@ Implemented cohort lifecycle, optimistic concurrency, one primary published assi
 
 Quality evidence: M12 CI run `34697852158` — six jobs PASS.
 
-## M12.8 execution status — NOT LOCKED
+### M12.8 — Integration, Security, Reliability & Performance Test Execution — 🔒 LOCKED
 
-Build and test execution are recorded in `docs/release/M12.8-TEST-EXECUTION.md`.
+M12.8 release matrix executes architecture/type/domain/security/contracts, production web build, fresh PostgreSQL migration, learner/instructor integration, canonical authority integration, cohort operations, canonical learner/instructor E2E, AI outage, DB/read dependency failures, duplicate/stale/cross-tenant cases, migration fail-stop, and performance thresholds.
 
-M12 CI run `34698420579` on commit `6b5600a7a1ec0c64e47bce4e8dd447b4b8a0f9f4` completed **9/9 jobs PASS**, including:
+The missing historical M11 numeric performance values were resolved only through explicit Change Review; they were not fabricated. Approved replacement baseline:
 
-- architecture/type/domain/security/contracts;
-- production web build;
-- fresh migration and constraint verification;
-- learner/instructor integration;
-- authority regression;
-- cohort operations;
-- canonical learner/instructor E2E with AI outage;
-- dependency/failure injection;
-- injected migration failure;
-- representative performance measurement.
+- learner overview p95 <= 100 ms;
+- instructor cohort overview p95 <= 200 ms;
+- minimum dataset 50 learners / 20 lessons / 1,000 progress rows.
 
-Measured representative performance:
+Final evidence: M12 CI run `34698980079` on commit `93650cbe2b9a8a2eea6573242456a999b27eff2e` — **9/9 jobs PASS**.
 
-- learner overview: p50 4.01 ms, p95 4.57 ms, max 5.17 ms (30 samples);
-- instructor cohort overview: p50 28.75 ms, p95 29.45 ms, max 30.52 ms (20 samples).
+Post-approval performance evidence:
 
-### Open blocker
+- learner overview: p50 4.15 ms, p95 5.84 ms, max 6.33 ms;
+- instructor cohort overview: p50 28.24 ms, p95 40.39 ms, max 42.01 ms.
 
-`RB-M12-008-001 — Exact locked M11 numeric performance targets are unavailable in the recovered repository baseline.`
-
-M12.8 explicitly requires performance baseline comparison against M11 targets. Measurements exist, but inventing targets is prohibited. Therefore M12.8 cannot pass Final Review or LOCK until the exact M11 targets are recovered and the measured implementation is evaluated against them.
-
-Production-like gVisor/runsc hostile verifier-host rehearsal is also still required before production release and is tracked as an M12.9 environment gate; current M12.8 verifier security evidence is contract-level.
+`RB-M12-008-001` is RESOLVED. Dedicated production-like runsc hostile-host rehearsal remains an M12.9 environment gate and is not incorrectly claimed by M12.8.
 
 ## Current release status
 
-M12.1–M12.7 are 🔒 LOCKED.
+M12.1–M12.8 are 🔒 LOCKED.
 
-M12.8 has completed all currently executable CI tests but remains **UNLOCKED / BLOCKED** solely on `RB-M12-008-001` for the locked M11 performance-target comparison.
+M12.9 Release Candidate & Deployment Readiness may begin. Remaining release-critical work includes production configuration validation, verifier-host rehearsal, observability/alerts, migration rollback/recovery rehearsal, backup/restore drill, production-like smoke, and RC evidence.
 
-M12.9 Release Candidate preparation must not begin while M12.8 is blocked. M12 overall remains **UNLOCKED**.
+M12 overall remains **UNLOCKED** until M12.9 and M12.10 pass their gates.
