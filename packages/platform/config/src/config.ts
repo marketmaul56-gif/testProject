@@ -4,6 +4,8 @@ const postgresUrl = z.string().url().refine((value) => value.startsWith("postgre
   message: "must be a PostgreSQL URL",
 });
 
+// Validate the application-owned configuration contract without treating
+// unrelated host/runner environment variables as application input errors.
 const environmentSchema = z.object({
   NODE_ENV: z.enum(["local", "test", "staging", "production"]).default("local"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
@@ -12,7 +14,7 @@ const environmentSchema = z.object({
   BETTER_AUTH_URL: z.string().url(),
   BETTER_AUTH_SECRET: z.string().min(32),
   TRUSTED_ORIGINS: z.string().min(1),
-}).strict();
+}).passthrough();
 
 export type RuntimeConfig = Readonly<{
   environment: "local" | "test" | "staging" | "production";
@@ -28,7 +30,11 @@ export function loadRuntimeConfig(input: Record<string, string | undefined>): Ru
   const parsed = environmentSchema.parse(input);
   const trustedOrigins = parsed.TRUSTED_ORIGINS.split(",").map((value) => value.trim()).filter(Boolean);
   if (trustedOrigins.length === 0) throw new Error("at least one trusted origin is required");
-  for (const origin of trustedOrigins) new URL(origin);
+  for (const origin of trustedOrigins) {
+    const url = new URL(origin);
+    if (url.origin !== origin.replace(/\/$/, "")) throw new Error(`trusted origin must not include a path: ${origin}`);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`unsupported trusted origin protocol: ${origin}`);
+  }
 
   if (parsed.NODE_ENV === "production" && parsed.BETTER_AUTH_SECRET.includes("local-only")) {
     throw new Error("production cannot use a development authentication secret");
