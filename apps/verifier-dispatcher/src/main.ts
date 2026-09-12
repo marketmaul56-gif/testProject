@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { startTelemetry } from "../../../packages/platform/observability/src/telemetry.ts";
 import { S3ObjectStorage } from "../../../packages/platform/storage/src/s3-object-storage.ts";
 import { LocalVerifierBundleFactory } from "./bundle-factory.ts";
 import { RunscVerifierExecutor } from "./runsc-executor.ts";
@@ -25,6 +26,7 @@ const schema = z.object({
 });
 
 export async function bootstrapVerifierDispatcher(): Promise<void> {
+  const telemetry = startTelemetry("skill-platform-verifier-dispatcher");
   const config = schema.parse(process.env);
   const policy = createVerifierSandboxPolicy(config.VERIFIER_RUNTIME_IMAGE_DIGEST);
   const storage = new S3ObjectStorage({
@@ -46,12 +48,13 @@ export async function bootstrapVerifierDispatcher(): Promise<void> {
     server.once("error", reject);
     server.listen(config.PORT, "0.0.0.0", () => resolve());
   });
-  const shutdown = () => {
-    server.close();
+  const shutdown = async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     storage.destroy();
+    await telemetry.shutdown();
   };
-  process.once("SIGTERM", shutdown);
-  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", () => { void shutdown(); });
+  process.once("SIGINT", () => { void shutdown(); });
 }
 
 if (process.env.NODE_ENV !== "test") {

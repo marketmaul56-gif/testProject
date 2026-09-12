@@ -75,22 +75,31 @@ set -e
 cleanup
 pass "memory exhaustion contained"
 
-# V9: hostile code attempts to create 128 child processes. Measure the actual
-# sandbox process population from the host so the assertion itself does not
-# need to fork inside a sandbox that has reached its process ceiling.
-docker run -d --name "${PREFIX}-pids" "${common[@]}" "$ALPINE_DIGEST" sh -c '
+# V9: hostile code attempts to create far more processes than the locked limit.
+# Keep the parent shell alive even after fork denial, then measure the cgroup-backed
+# process population from the host. The Docker runtime contract itself is also
+# asserted so an early hostile-process exit cannot produce a false positive.
+pid_name="${PREFIX}-pids"
+docker run -d --name "$pid_name" "${common[@]}" "$ALPINE_DIGEST" sh -c '
   i=0
   while [ "$i" -lt 128 ]; do
     sleep 20 &
     i=$((i + 1))
   done
-  sleep 20
+  while :; do :; done
 ' >/dev/null
 sleep 2
-pid_count="$(docker top "${PREFIX}-pids" -eo pid 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')"
+pids_limit="$(docker inspect "$pid_name" --format '{{.HostConfig.PidsLimit}}')"
+[[ "$pids_limit" == "32" ]] || fail "Docker PID limit contract changed: ${pids_limit}"
+set +e
+top_output="$(docker top "$pid_name" -eo pid 2>/dev/null)"
+top_rc=$?
+set -e
+[[ $top_rc -eq 0 ]] || fail "host could not inspect hostile sandbox process population"
+pid_count="$(printf '%s\n' "$top_output" | tail -n +2 | awk 'NF {count++} END {print count+0}')"
 [[ "$pid_count" =~ ^[0-9]+$ ]] || fail "could not measure sandbox process population"
 [[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"
-[[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not start enough processes to exercise the limit"
+[[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not exercise the process limit"
 cleanup
 pass "process exhaustion contained at ${pid_count}/32 processes"
 

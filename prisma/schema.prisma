@@ -242,6 +242,8 @@ model ArtifactRevision {
   revisionNumber Int       @map("revision_number")
   objectKey      String    @map("object_key")
   contentHash    String    @map("content_hash")
+  contentType    String?   @map("content_type")
+  contentLength  BigInt?   @map("content_length")
   sealedAt       DateTime? @map("sealed_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
