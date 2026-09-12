@@ -1,6 +1,6 @@
 # Change Review — M12.8 Performance Baseline Recovery
 
-Status: **PENDING EXPLICIT APPROVAL**
+Status: **ACCEPTED — BASELINE AMENDED**
 
 Date: 2026-09-12
 
@@ -57,9 +57,9 @@ Reason:
 
 ### Alternative C — Replace only the missing numeric targets with explicit MVP release thresholds
 
-Recommended.
+Accepted.
 
-Proposed replacement gate, on the same representative dataset and CI test semantics:
+Approved replacement gate, on the same representative dataset and CI test semantics:
 
 | Read path | Replacement release target |
 |---|---:|
@@ -74,17 +74,19 @@ Supporting rules:
 4. These thresholds apply specifically to the current server-side read-model performance gate. They do not claim browser/network latency or verifier execution latency.
 5. M12.9 still requires production-like smoke, observability validation, verifier-host rehearsal, and operational readiness; those requirements are not weakened.
 
-Rationale for the proposed thresholds:
+Rationale for the approved thresholds:
 
 - independent from the exact measured values rather than copying them;
 - strict enough to detect large N+1/query-plan regressions in MVP read paths;
 - include reasonable CI/runtime variance headroom;
 - preserve the MVP principle of simple, responsive operational/learning views without creating premature enterprise-scale requirements.
 
-Against current evidence:
+Against the pre-approval measured evidence:
 
 - learner p95 4.57 ms vs 100 ms target: PASS;
 - instructor p95 29.45 ms vs 200 ms target: PASS.
+
+A post-approval CI rerun is still required before M12.8 may LOCK.
 
 ## Product/UX/Architecture/Data/AI/Security impact
 
@@ -116,12 +118,12 @@ No security relaxation. Authorization, tenant isolation, hidden verifier boundar
 
 No production data migration is required.
 
-Repository/documentation changes after approval:
+Repository/documentation actions after approval:
 
-1. record this Change Review as `ACCEPT`;
-2. amend M12.8 test documentation to use the replacement thresholds;
-3. make `tests/performance/read-model-baseline.test.ts` assert the approved p95 targets;
-4. rerun M12 CI;
+1. record this Change Review as `ACCEPT` — COMPLETE;
+2. make `tests/performance/read-model-baseline.test.ts` assert the approved p95 targets;
+3. rerun M12 CI;
+4. amend M12.8 execution documentation with post-approval evidence;
 5. only if the run passes, resolve `RB-M12-008-001` and proceed to M12.8 Final Review/LOCK.
 
 ## Backward compatibility implication
@@ -138,17 +140,17 @@ Governance impact only: the missing M11 numeric target reference is replaced pro
 - instructor cohort overview p95 <= **200 ms**;
 - representative dataset minimum: **50 learners, 20 lessons, 1,000 progress rows**.
 
-This is the smallest change that resolves the unrecoverable numeric baseline while preserving all other LOCKED decisions and maintaining an objective executable release gate.
-
 ## Decision
 
 - [ ] REJECT — keep LOCKED baseline and M12.8 blocked
-- [ ] ACCEPT — amend only the unavailable numeric performance baseline as specified above
+- [x] ACCEPT — amend only the unavailable numeric performance baseline as specified above
 
-Current decision: **PENDING EXPLICIT USER APPROVAL**.
+Current decision: **ACCEPTED**.
 
 ## Approval evidence
 
-Pending explicit user statement accepting or rejecting this Change Review.
+Explicit user approval received in project chat on 2026-09-12:
 
-After explicit acceptance, the repository will be updated with the approval evidence and the replacement target will become the controlling baseline for M12.8 performance evaluation.
+`ACCEPT Change Review M12.8`
+
+The approved replacement targets are now the controlling baseline for M12.8 performance evaluation. This amendment does not retroactively claim that these were the original M11 numeric values.
