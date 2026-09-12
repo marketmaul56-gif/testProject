@@ -75,14 +75,26 @@ set -e
 cleanup
 pass "memory exhaustion contained"
 
-# V9: process bomb is bounded by sandbox PID quota and wall-clock guard.
-set +e
-timeout --signal=KILL 6s docker run --rm --name "${PREFIX}-pids" "${common[@]}" "$ALPINE_DIGEST" sh -c 'bomb(){ bomb | bomb & }; bomb' >/dev/null 2>&1
-pids_rc=$?
-set -e
-[[ $pids_rc -ne 0 ]] || fail "process bomb unexpectedly completed successfully"
+# V9: spawn pressure must observe explicit process denial before 128 children.
+# The test succeeds only when the sandbox/cgroup refuses new processes.
+pid_result="$(timeout --signal=KILL 10s docker run --rm --name "${PREFIX}-pids" "${common[@]}" "$NODE_DIGEST" node -e '
+  const { spawn } = require("node:child_process");
+  let settled = 0, denied = 0;
+  const total = 128;
+  const finish = () => {
+    if (++settled !== total) return;
+    process.stdout.write(JSON.stringify({ denied }));
+    process.exit(denied > 0 ? 0 : 42);
+  };
+  for (let i = 0; i < total; i++) {
+    const child = spawn("sh", ["-c", "sleep 1"]);
+    child.once("error", () => { denied++; finish(); });
+    child.once("exit", finish);
+  }
+')" || fail "PID containment probe timed out or observed no spawn denial"
+grep -Eq '"denied":[1-9][0-9]*' <<<"$pid_result" || fail "PID quota did not deny excess processes"
 cleanup
-pass "process exhaustion contained"
+pass "process exhaustion contained with explicit spawn denial"
 
 # V10: hidden verifier material is not on the default learner execution surface.
 mkdir -p "${RUNNER_TEMP:-/tmp}/${PREFIX}-hidden"
@@ -93,9 +105,9 @@ fi
 rm -rf "${RUNNER_TEMP:-/tmp}/${PREFIX}-hidden"
 pass "hidden verifier input absent from untrusted default surface"
 
-# V11: hostile stdout generation is bounded by caller-side capture; dispatcher
-# NodeProcessRunner separately enforces the locked 64 KiB combined output limit.
-bytes="$(timeout 3s docker run --rm "${common[@]}" "$ALPINE_DIGEST" sh -c 'yes X' 2>/dev/null | head -c 65536 | wc -c)"
+# V11: bound hostile stdout capture. Disable pipefail inside this subshell because
+# head intentionally closes the producer pipe after the locked byte limit.
+bytes="$(set +o pipefail; timeout 3s docker run --rm "${common[@]}" "$ALPINE_DIGEST" sh -c 'yes X' 2>/dev/null | head -c 65536 | wc -c)"
 [[ "$bytes" -eq 65536 ]] || fail "bounded output rehearsal returned unexpected byte count"
 pass "host remains responsive under hostile output"
 
