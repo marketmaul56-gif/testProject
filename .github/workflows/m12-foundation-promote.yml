@@ -1,0 +1,94 @@
+name: M12 Foundation Promotion (one-time)
+
+on:
+  push:
+    branches: [m12/implementation-foundation]
+    paths:
+      - .github/workflows/m12-foundation-promote.yml
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: m12/implementation-foundation
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.0
+      - name: Apply bounded M12.9 source synchronization
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected patch anchor missing: {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              "prisma/schema.prisma",
+              '  contentHash    String    @map("content_hash")\n  sealedAt       DateTime? @map("sealed_at") @db.Timestamptz(6)',
+              '  contentHash    String    @map("content_hash")\n  contentType    String?   @map("content_type")\n  contentLength  BigInt?   @map("content_length")\n  sealedAt       DateTime? @map("sealed_at") @db.Timestamptz(6)',
+          )
+
+          replace(
+              "apps/verifier-dispatcher/src/main.ts",
+              'import { z } from "zod";\nimport { S3ObjectStorage } from "../../../packages/platform/storage/src/s3-object-storage.ts";',
+              'import { z } from "zod";\nimport { startTelemetry } from "../../../packages/platform/observability/src/telemetry.ts";\nimport { S3ObjectStorage } from "../../../packages/platform/storage/src/s3-object-storage.ts";',
+          )
+          replace(
+              "apps/verifier-dispatcher/src/main.ts",
+              'export async function bootstrapVerifierDispatcher(): Promise<void> {\n  const config = schema.parse(process.env);',
+              'export async function bootstrapVerifierDispatcher(): Promise<void> {\n  const telemetry = startTelemetry("skill-platform-verifier-dispatcher");\n  const config = schema.parse(process.env);',
+          )
+          replace(
+              "apps/verifier-dispatcher/src/main.ts",
+              '  const shutdown = () => {\n    server.close();\n    storage.destroy();\n  };\n  process.once("SIGTERM", shutdown);\n  process.once("SIGINT", shutdown);',
+              '  const shutdown = async () => {\n    await new Promise<void>((resolve) => server.close(() => resolve()));\n    storage.destroy();\n    await telemetry.shutdown();\n  };\n  process.once("SIGTERM", () => { void shutdown(); });\n  process.once("SIGINT", () => { void shutdown(); });',
+          )
+
+          p = Path("scripts/rehearse-gvisor.sh")
+          text = p.read_text()
+          start = text.index('# V9: hostile code attempts to create 128 child processes.')
+          end = text.index('# V10: hidden verifier material', start)
+          v9 = '''# V9: hostile code attempts to create far more processes than the locked limit.\n# Keep the parent shell alive even after fork denial, then measure the cgroup-backed\n# process population from the host. The Docker runtime contract itself is also\n# asserted so an early hostile-process exit cannot produce a false positive.\npid_name="${PREFIX}-pids"\ndocker run -d --name "$pid_name" "${common[@]}" "$ALPINE_DIGEST" sh -c '\n  i=0\n  while [ "$i" -lt 128 ]; do\n    sleep 20 &\n    i=$((i + 1))\n  done\n  while :; do :; done\n' >/dev/null\nsleep 2\npids_limit="$(docker inspect "$pid_name" --format '{{.HostConfig.PidsLimit}}')"\n[[ "$pids_limit" == "32" ]] || fail "Docker PID limit contract changed: ${pids_limit}"\nset +e\ntop_output="$(docker top "$pid_name" -eo pid 2>/dev/null)"\ntop_rc=$?\nset -e\n[[ $top_rc -eq 0 ]] || fail "host could not inspect hostile sandbox process population"\npid_count="$(printf '%s\\n' "$top_output" | tail -n +2 | awk 'NF {count++} END {print count+0}')"\n[[ "$pid_count" =~ ^[0-9]+$ ]] || fail "could not measure sandbox process population"\n[[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"\n[[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not exercise the process limit"\ncleanup\npass "process exhaustion contained at ${pid_count}/32 processes"\n\n'''
+          p.write_text(text[:start] + v9 + text[end:])
+
+          p = Path(".env.example")
+          text = p.read_text()
+          text = text.replace(
+              'OBJECT_STORAGE_ENDPOINT=http://localhost:9000\nOBJECT_STORAGE_BUCKET=skill-platform-local\nOBJECT_STORAGE_ACCESS_KEY=local-only\nOBJECT_STORAGE_SECRET_KEY=local-only',
+              'OBJECT_STORAGE_ENDPOINT=http://localhost:9000\nOBJECT_STORAGE_REGION=us-east-1\nOBJECT_STORAGE_BUCKET=skill-platform-local\nOBJECT_STORAGE_FORCE_PATH_STYLE=true\nOBJECT_STORAGE_ACCESS_KEY_ID=local-only\nOBJECT_STORAGE_SECRET_ACCESS_KEY=local-only',
+          )
+          if 'OTEL_EXPORTER_OTLP_ENDPOINT=' not in text:
+              text += '\n# Optional OpenTelemetry OTLP/HTTP collector. No learner artifact or hidden-test content is emitted.\nOTEL_EXPORTER_OTLP_ENDPOINT=\nOTEL_EXPORTER_OTLP_TIMEOUT=5000\n'
+          p.write_text(text)
+          PY
+      - name: Generate canonical lockfile
+        run: pnpm install --lockfile-only
+      - name: Commit bounded promotion
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prisma/schema.prisma apps/verifier-dispatcher/src/main.ts scripts/rehearse-gvisor.sh .env.example pnpm-lock.yaml
+          git diff --cached --check
+          git commit -m "fix: complete M12.9 production foundation"
+          git push origin HEAD:m12/implementation-foundation
+      - name: Verify frozen dependency graph
+        run: pnpm install --frozen-lockfile
+      - name: Validate schema and types
+        run: |
+          pnpm db:validate
+          pnpm typecheck
