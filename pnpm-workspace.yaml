@@ -9,3 +9,4 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   msgpackr-extract: true
+  protobufjs: true
