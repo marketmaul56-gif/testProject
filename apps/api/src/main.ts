@@ -30,7 +30,6 @@ export async function bootstrap(): Promise<void> {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }));
 
-  // Better Auth must receive the raw request stream before JSON body parsing.
   server.all("/api/auth/*splat", toNodeHandler(auth));
   server.use(express.json({ limit: "256kb" }));
   server.get("/healthz", (_request, response) => response.status(200).json({ status: "ok" }));
@@ -41,7 +40,7 @@ export async function bootstrap(): Promise<void> {
   const securityAuditSink = new PgSecurityAuditSink(applicationPool);
   server.use("/api/v1", principalMiddleware(sessionRuntime, membershipDirectory, securityAuditSink));
 
-  const app = await NestFactory.create(AppModule.forRoot(applicationPool, config.ai), new ExpressAdapter(server), { bodyParser: false });
+  const app = await NestFactory.create(AppModule.forRoot(applicationPool, config), new ExpressAdapter(server), { bodyParser: false });
   app.setGlobalPrefix("api/v1");
   app.useGlobalFilters(new ProblemDetailsFilter());
   app.enableShutdownHooks();
