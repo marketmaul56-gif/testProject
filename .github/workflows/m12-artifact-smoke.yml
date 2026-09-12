@@ -24,6 +24,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - name: Apply version-controlled migrations
@@ -84,6 +93,7 @@ jobs:
           docker run --detach --name m12-worker --network host \
             -e NODE_ENV=production \
             -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform \
+            -e REDIS_URL=redis://127.0.0.1:6379/0 \
             -e VERIFIER_DISPATCHER_URL=http://127.0.0.1:3010 \
             -e VERIFIER_DISPATCHER_TOKEN=ci-dispatcher-token-0123456789abcdef0123456789 \
             -e WORKER_POLL_MS=250 \
