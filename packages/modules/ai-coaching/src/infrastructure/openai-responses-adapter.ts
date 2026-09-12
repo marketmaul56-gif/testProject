@@ -47,13 +47,16 @@ const structuredOutputSchema = {
 
 export class OpenAiResponsesAdapter implements AiCoachingProvider {
   readonly modelProfile: string;
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly timeoutMs: number;
+  private readonly fetchImpl: typeof fetch;
 
-  constructor(
-    private readonly apiKey: string,
-    private readonly model: string,
-    private readonly timeoutMs: number,
-    private readonly fetchImpl: typeof fetch = fetch,
-  ) {
+  constructor(apiKey: string, model: string, timeoutMs: number, fetchImpl: typeof fetch = fetch) {
+    this.apiKey = apiKey;
+    this.model = model;
+    this.timeoutMs = timeoutMs;
+    this.fetchImpl = fetchImpl;
     this.modelProfile = `openai:${model}`;
   }
 
