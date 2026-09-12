@@ -1,0 +1,82 @@
+name: M12 CI
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  domain-and-architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install dependencies and generate lockfile
+        run: pnpm install --no-frozen-lockfile
+      - name: Architecture checks
+        run: pnpm run check:architecture
+      - name: Domain invariant tests
+        run: pnpm run test:domain
+      - name: Prisma schema validation
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: pnpm run db:validate
+      - name: Upload generated lockfile for bootstrap recovery
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-lock
+          path: pnpm-lock.yaml
+      - name: Require committed lockfile
+        run: |
+          test -f pnpm-lock.yaml
+          if [ -n "$(git status --porcelain -- pnpm-lock.yaml)" ]; then
+            echo 'pnpm-lock.yaml must be committed before merge.'
+            exit 1
+          fi
+
+  migration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply initial migration
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f prisma/migrations/202609120001_initial_core/migration.sql
+      - name: Verify authority constraints exist
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'skill_evidence_requires_pass') THEN
+              RAISE EXCEPTION 'missing skill_evidence_requires_pass trigger';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'course_versions_immutable_after_publish') THEN
+              RAISE EXCEPTION 'missing course version immutability trigger';
+            END IF;
+          END $$;
+          SQL

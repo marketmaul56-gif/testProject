@@ -1,0 +1,522 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../packages/platform/db/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LearningVersionStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum VerificationAttemptStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+}
+
+enum VerificationOutcome {
+  PASSED
+  FAILED
+  ERROR
+}
+
+enum CompetencyProjectionStatus {
+  NOT_YET_EVIDENCED
+  EVIDENCED
+}
+
+enum CohortStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ENROLLED
+  REMOVED
+}
+
+model Tenant {
+  id        String   @id @db.Uuid
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  members              Member[]
+  courses              Course[]
+  courseVersions       CourseVersion[]
+  skills               Skill[]
+  practiceDefinitions  PracticeDefinition[]
+  practiceRevisions    PracticeRevision[]
+  practiceSubmissions  PracticeSubmission[]
+  projectDefinitions   ProjectDefinition[]
+  projectArtifacts     ProjectArtifact[]
+  artifactRevisions    ArtifactRevision[]
+  projectSubmissions   ProjectSubmission[]
+  verificationAttempts VerificationAttempt[]
+  verificationResults  VerificationResult[]
+  skillEvidence        SkillEvidence[]
+  competencyStates     CompetencyState[]
+  cohorts              Cohort[]
+  cohortMemberships    CohortMembership[]
+  learningAssignments  LearningAssignment[]
+  instructorRoles      InstructorCohortRole[]
+  outboxEvents          OutboxEvent[]
+  auditEvents           AuditEvent[]
+
+  @@map("tenants")
+}
+
+model Member {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  authUserId  String   @map("auth_user_id")
+  displayName String?  @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  enrollments         Enrollment[]
+  lessonProgress      LessonProgress[]
+  practiceSubmissions PracticeSubmission[]
+  projectArtifacts    ProjectArtifact[]
+  projectSubmissions  ProjectSubmission[]
+  skillEvidence       SkillEvidence[]
+  competencyStates    CompetencyState[]
+  cohortMemberships   CohortMembership[]
+  instructorRoles     InstructorCohortRole[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, authUserId])
+  @@index([tenantId])
+  @@map("members")
+}
+
+model Course {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  versions CourseVersion[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, key])
+  @@map("courses")
+}
+
+model CourseVersion {
+  id          String                @id @db.Uuid
+  tenantId    String                @map("tenant_id") @db.Uuid
+  courseId    String                @map("course_id") @db.Uuid
+  version     Int
+  status      LearningVersionStatus @default(DRAFT)
+  title       String
+  publishedAt DateTime?             @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  course      Course               @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  chapters    ChapterVersion[]
+  enrollments Enrollment[]
+  assignments LearningAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, courseId, version])
+  @@index([tenantId, status])
+  @@map("course_versions")
+}
+
+model ChapterVersion {
+  id              String @id @db.Uuid
+  tenantId        String @map("tenant_id") @db.Uuid
+  courseVersionId String @map("course_version_id") @db.Uuid
+  position        Int
+  title           String
+
+  courseVersion CourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  lessons       LessonVersion[]
+
+  @@unique([tenantId, id])
+  @@unique([courseVersionId, position])
+  @@map("chapter_versions")
+}
+
+model LessonVersion {
+  id               String @id @db.Uuid
+  tenantId         String @map("tenant_id") @db.Uuid
+  chapterVersionId String @map("chapter_version_id") @db.Uuid
+  position         Int
+  title            String
+  content          Json
+
+  chapterVersion ChapterVersion      @relation(fields: [chapterVersionId], references: [id], onDelete: Restrict)
+  practices      PracticeDefinition[]
+  lessonProgress LessonProgress[]
+
+  @@unique([tenantId, id])
+  @@unique([chapterVersionId, position])
+  @@map("lesson_versions")
+}
+
+model Skill {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  practiceRevisions PracticeRevision[]
+  evidence          SkillEvidence[]
+  competencyStates  CompetencyState[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, key])
+  @@map("skills")
+}
+
+model Enrollment {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  learnerId       String   @map("learner_id") @db.Uuid
+  courseVersionId String   @map("course_version_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  learner       Member        @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  courseVersion CourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, learnerId, courseVersionId])
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  learnerId       String   @map("learner_id") @db.Uuid
+  lessonVersionId String   @map("lesson_version_id") @db.Uuid
+  state           String
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  learner       Member        @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  lessonVersion LessonVersion @relation(fields: [lessonVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, learnerId, lessonVersionId])
+  @@map("lesson_progress")
+}
+
+model PracticeDefinition {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  lessonVersionId String   @map("lesson_version_id") @db.Uuid
+  key             String
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  lesson    LessonVersion      @relation(fields: [lessonVersionId], references: [id], onDelete: Restrict)
+  revisions PracticeRevision[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, lessonVersionId, key])
+  @@map("practice_definitions")
+}
+
+model PracticeRevision {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  practiceId     String   @map("practice_id") @db.Uuid
+  skillId        String   @map("skill_id") @db.Uuid
+  revisionNumber Int      @map("revision_number")
+  definition     Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  practice    PracticeDefinition @relation(fields: [practiceId], references: [id], onDelete: Restrict)
+  skill       Skill              @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  submissions PracticeSubmission[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, practiceId, revisionNumber])
+  @@map("practice_revisions")
+}
+
+model PracticeSubmission {
+  id                 String   @id @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  learnerId          String   @map("learner_id") @db.Uuid
+  practiceRevisionId String   @map("practice_revision_id") @db.Uuid
+  attemptNumber      Int      @map("attempt_number")
+  requestId          String   @map("request_id")
+  artifact           Json
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  learner              Member                @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  practiceRevision     PracticeRevision      @relation(fields: [practiceRevisionId], references: [id], onDelete: Restrict)
+  verificationAttempts VerificationAttempt[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, learnerId, practiceRevisionId, attemptNumber])
+  @@unique([tenantId, learnerId, practiceRevisionId, requestId])
+  @@map("practice_submissions")
+}
+
+model ProjectDefinition {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  title     String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  artifacts ProjectArtifact[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, key])
+  @@map("project_definitions")
+}
+
+model ProjectArtifact {
+  id                  String   @id @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  learnerId           String   @map("learner_id") @db.Uuid
+  projectDefinitionId String   @map("project_definition_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  learner           Member            @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  projectDefinition ProjectDefinition @relation(fields: [projectDefinitionId], references: [id], onDelete: Restrict)
+  revisions         ArtifactRevision[]
+
+  @@unique([tenantId, id])
+  @@map("project_artifacts")
+}
+
+model ArtifactRevision {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  artifactId     String    @map("artifact_id") @db.Uuid
+  revisionNumber Int       @map("revision_number")
+  objectKey      String    @map("object_key")
+  contentHash    String    @map("content_hash")
+  sealedAt       DateTime? @map("sealed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  artifact    ProjectArtifact     @relation(fields: [artifactId], references: [id], onDelete: Restrict)
+  submissions ProjectSubmission[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, artifactId, revisionNumber])
+  @@unique([tenantId, objectKey])
+  @@map("artifact_revisions")
+}
+
+model ProjectSubmission {
+  id                 String   @id @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  learnerId          String   @map("learner_id") @db.Uuid
+  artifactRevisionId String   @map("artifact_revision_id") @db.Uuid
+  requestId          String   @map("request_id")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  learner              Member                @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  artifactRevision     ArtifactRevision      @relation(fields: [artifactRevisionId], references: [id], onDelete: Restrict)
+  verificationAttempts VerificationAttempt[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, learnerId, artifactRevisionId, requestId])
+  @@map("project_submissions")
+}
+
+model VerificationAttempt {
+  id                   String                    @id @db.Uuid
+  tenantId             String                    @map("tenant_id") @db.Uuid
+  practiceSubmissionId String?                   @map("practice_submission_id") @db.Uuid
+  projectSubmissionId  String?                   @map("project_submission_id") @db.Uuid
+  status               VerificationAttemptStatus @default(PENDING)
+  verifierKey          String                    @map("verifier_key")
+  verifierVersion      String                    @map("verifier_version")
+  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt            DateTime?                 @map("started_at") @db.Timestamptz(6)
+  completedAt          DateTime?                 @map("completed_at") @db.Timestamptz(6)
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  practiceSubmission PracticeSubmission? @relation(fields: [practiceSubmissionId], references: [id], onDelete: Restrict)
+  projectSubmission  ProjectSubmission?  @relation(fields: [projectSubmissionId], references: [id], onDelete: Restrict)
+  result             VerificationResult?
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@map("verification_attempts")
+}
+
+model VerificationResult {
+  id                    String              @id @db.Uuid
+  tenantId              String              @map("tenant_id") @db.Uuid
+  verificationAttemptId String              @unique @map("verification_attempt_id") @db.Uuid
+  learnerId             String              @map("learner_id") @db.Uuid
+  outcome               VerificationOutcome
+  diagnostic            Json?
+  completedAt           DateTime            @map("completed_at") @db.Timestamptz(6)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  attempt  VerificationAttempt @relation(fields: [verificationAttemptId], references: [id], onDelete: Restrict)
+  evidence SkillEvidence[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, learnerId, outcome])
+  @@map("verification_results")
+}
+
+model SkillEvidence {
+  id                   String   @id @db.Uuid
+  tenantId             String   @map("tenant_id") @db.Uuid
+  learnerId            String   @map("learner_id") @db.Uuid
+  skillId              String   @map("skill_id") @db.Uuid
+  verificationResultId String   @map("verification_result_id") @db.Uuid
+  issuedAt             DateTime @map("issued_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  learner            Member             @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  skill              Skill              @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  verificationResult VerificationResult @relation(fields: [verificationResultId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, verificationResultId, skillId])
+  @@index([tenantId, learnerId, skillId])
+  @@map("skill_evidence")
+}
+
+model CompetencyState {
+  id            String                     @id @db.Uuid
+  tenantId      String                     @map("tenant_id") @db.Uuid
+  learnerId     String                     @map("learner_id") @db.Uuid
+  skillId       String                     @map("skill_id") @db.Uuid
+  status        CompetencyProjectionStatus @default(NOT_YET_EVIDENCED)
+  evidenceCount Int                        @default(0) @map("evidence_count")
+  projectedAt   DateTime                   @map("projected_at") @db.Timestamptz(6)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  learner Member @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, learnerId, skillId])
+  @@map("competency_states")
+}
+
+model Cohort {
+  id        String       @id @db.Uuid
+  tenantId  String       @map("tenant_id") @db.Uuid
+  key       String
+  name      String
+  status    CohortStatus @default(DRAFT)
+  version   Int          @default(0)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  memberships CohortMembership[]
+  assignments LearningAssignment[]
+  instructors InstructorCohortRole[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, key])
+  @@map("cohorts")
+}
+
+model CohortMembership {
+  id         String           @id @db.Uuid
+  tenantId   String           @map("tenant_id") @db.Uuid
+  cohortId   String           @map("cohort_id") @db.Uuid
+  learnerId  String           @map("learner_id") @db.Uuid
+  status     MembershipStatus @default(ENROLLED)
+  enrolledAt DateTime         @map("enrolled_at") @db.Timestamptz(6)
+  removedAt  DateTime?        @map("removed_at") @db.Timestamptz(6)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  cohort  Cohort @relation(fields: [cohortId], references: [id], onDelete: Restrict)
+  learner Member @relation(fields: [learnerId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, cohortId, learnerId, status])
+  @@map("cohort_memberships")
+}
+
+model LearningAssignment {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  cohortId        String   @map("cohort_id") @db.Uuid
+  courseVersionId String   @map("course_version_id") @db.Uuid
+  isPrimary       Boolean  @default(true) @map("is_primary")
+  assignedAt      DateTime @map("assigned_at") @db.Timestamptz(6)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  cohort        Cohort        @relation(fields: [cohortId], references: [id], onDelete: Restrict)
+  courseVersion CourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, cohortId, isPrimary])
+  @@map("learning_assignments")
+}
+
+model InstructorCohortRole {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  cohortId     String   @map("cohort_id") @db.Uuid
+  instructorId String   @map("instructor_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  cohort     Cohort @relation(fields: [cohortId], references: [id], onDelete: Restrict)
+  instructor Member @relation(fields: [instructorId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, cohortId, instructorId])
+  @@map("instructor_cohort_roles")
+}
+
+model OutboxEvent {
+  id            String    @id @db.Uuid
+  tenantId      String?   @map("tenant_id") @db.Uuid
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  eventType     String    @map("event_type")
+  payload       Json
+  occurredAt    DateTime  @map("occurred_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attemptCount  Int       @default(0) @map("attempt_count")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([publishedAt, occurredAt])
+  @@map("outbox_events")
+}
+
+model AuditEvent {
+  id           String   @id @db.Uuid
+  tenantId     String?  @map("tenant_id") @db.Uuid
+  actorType    String   @map("actor_type")
+  actorId      String?  @map("actor_id")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  metadata     Json?
+  occurredAt   DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, occurredAt])
+  @@map("audit_events")
+}
