@@ -1,0 +1,12 @@
+{
+  "name": "@skill-platform/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./experience": "./src/experience.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.2"
+  }
+}
