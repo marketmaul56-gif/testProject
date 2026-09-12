@@ -75,26 +75,24 @@ set -e
 cleanup
 pass "memory exhaustion contained"
 
-# V9: spawn pressure must observe explicit process denial before 128 children.
-# The test succeeds only when the sandbox/cgroup refuses new processes.
-pid_result="$(timeout --signal=KILL 10s docker run --rm --name "${PREFIX}-pids" "${common[@]}" "$NODE_DIGEST" node -e '
-  const { spawn } = require("node:child_process");
-  let settled = 0, denied = 0;
-  const total = 128;
-  const finish = () => {
-    if (++settled !== total) return;
-    process.stdout.write(JSON.stringify({ denied }));
-    process.exit(denied > 0 ? 0 : 42);
-  };
-  for (let i = 0; i < total; i++) {
-    const child = spawn("sh", ["-c", "sleep 1"]);
-    child.once("error", () => { denied++; finish(); });
-    child.once("exit", finish);
-  }
-')" || fail "PID containment probe timed out or observed no spawn denial"
-grep -Eq '"denied":[1-9][0-9]*' <<<"$pid_result" || fail "PID quota did not deny excess processes"
+# V9: hostile code attempts to create 128 child processes. Measure the actual
+# sandbox process population from the host so the assertion itself does not
+# need to fork inside a sandbox that has reached its process ceiling.
+docker run -d --name "${PREFIX}-pids" "${common[@]}" "$ALPINE_DIGEST" sh -c '
+  i=0
+  while [ "$i" -lt 128 ]; do
+    sleep 20 &
+    i=$((i + 1))
+  done
+  sleep 20
+' >/dev/null
+sleep 2
+pid_count="$(docker top "${PREFIX}-pids" -eo pid 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')"
+[[ "$pid_count" =~ ^[0-9]+$ ]] || fail "could not measure sandbox process population"
+[[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"
+[[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not start enough processes to exercise the limit"
 cleanup
-pass "process exhaustion contained with explicit spawn denial"
+pass "process exhaustion contained at ${pid_count}/32 processes"
 
 # V10: hidden verifier material is not on the default learner execution surface.
 mkdir -p "${RUNNER_TEMP:-/tmp}/${PREFIX}-hidden"
