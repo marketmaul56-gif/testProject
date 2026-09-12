@@ -5,10 +5,11 @@ import cors from "cors";
 import express from "express";
 import { toNodeHandler } from "better-auth/node";
 import { Pool } from "pg";
-import { loadRuntimeConfig } from "../../../packages/platform/config/src/config.ts";
+import { PgSecurityAuditSink } from "../../../packages/platform/audit/src/security-audit.ts";
 import { createBetterAuth } from "../../../packages/platform/auth/src/better-auth.ts";
-import { createSessionRuntime } from "../../../packages/platform/auth/src/session-runtime.ts";
 import { PgMembershipDirectory } from "../../../packages/platform/auth/src/pg-membership-directory.ts";
+import { createSessionRuntime } from "../../../packages/platform/auth/src/session-runtime.ts";
+import { loadRuntimeConfig } from "../../../packages/platform/config/src/config.ts";
 import { AppModule } from "./app.module.ts";
 import { principalMiddleware } from "./principal-middleware.ts";
 
@@ -34,7 +35,8 @@ export async function bootstrap(): Promise<void> {
 
   const sessionRuntime = createSessionRuntime(auth);
   const membershipDirectory = new PgMembershipDirectory(applicationPool);
-  server.use("/api/v1", principalMiddleware(sessionRuntime, membershipDirectory));
+  const securityAuditSink = new PgSecurityAuditSink(applicationPool);
+  server.use("/api/v1", principalMiddleware(sessionRuntime, membershipDirectory, securityAuditSink));
 
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), { bodyParser: false });
   app.setGlobalPrefix("api/v1");
