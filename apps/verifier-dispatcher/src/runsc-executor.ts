@@ -55,10 +55,11 @@ export class NodeProcessRunner implements IsolatedProcessRunner {
       let stderr = "";
       let bytes = 0;
       let settled = false;
+      let timer: NodeJS.Timeout | null = null;
       const finishReject = (error: Error) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         child.kill("SIGKILL");
         reject(error);
       };
@@ -77,10 +78,10 @@ export class NodeProcessRunner implements IsolatedProcessRunner {
       child.once("close", (code) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         resolve(Object.freeze({ exitCode: code ?? 1, stdout, stderr }));
       });
-      const timer = setTimeout(() => finishReject(new Error("verifier wall-clock timeout exceeded")), options.timeoutMs);
+      timer = setTimeout(() => finishReject(new Error("verifier wall-clock timeout exceeded")), options.timeoutMs);
       timer.unref();
     });
   }
@@ -99,6 +100,7 @@ export class RunscVerifierExecutor implements VerifierExecutor {
 
   async execute(request: VerifierExecutionRequest): Promise<VerifierExecutionResult> {
     const bundle = await this.bundles.prepare(request, this.policy);
+    const isolatedEnv = Object.freeze({ PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" });
     try {
       const execution = await this.runner.run(
         "runsc",
@@ -107,8 +109,8 @@ export class RunscVerifierExecutor implements VerifierExecutor {
           cwd: bundle.bundlePath,
           timeoutMs: this.policy.wallClockMs,
           maxOutputBytes: this.policy.maxOutputBytes,
-          // No application, database, object-storage, AI, or cloud credentials.
-          env: Object.freeze({ PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" }),
+          // No application, database, object-storage, AI, cloud, or hidden-test references.
+          env: isolatedEnv,
         },
       );
       if (execution.exitCode !== 0) throw new Error("sandboxed verifier returned infrastructure error");
@@ -123,8 +125,18 @@ export class RunscVerifierExecutor implements VerifierExecutor {
         }),
       });
     } finally {
-      // runsc state cleanup is delegated to the bundle factory/node runtime; the
-      // ephemeral bundle itself is always destroyed after execution.
+      // Cleanup is attempted even after timeout/output-limit/runtime errors. The
+      // runtime delete is best-effort; bundle destruction remains mandatory.
+      try {
+        await this.runner.run("runsc", ["--rootless", "delete", "--force", bundle.containerId], {
+          cwd: bundle.bundlePath,
+          timeoutMs: 5_000,
+          maxOutputBytes: 8_192,
+          env: isolatedEnv,
+        });
+      } catch {
+        // Dedicated-node runtime reconciliation is handled by operational cleanup.
+      }
       await bundle.cleanup();
     }
   }
