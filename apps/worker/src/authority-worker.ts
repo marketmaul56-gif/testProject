@@ -1,6 +1,7 @@
 import type { PgCompetencyAuthority } from "../../../packages/modules/competency/src/infrastructure/pg-authority.ts";
 import { VerificationDispatcherService } from "../../../packages/modules/verification/src/application/authority.ts";
 import { PgRuntimeVerificationQueue } from "../../../packages/modules/verification/src/infrastructure/pg-runtime-queue.ts";
+import { authorityDeliveryCounter, dependencyFailureCounter, withSpan } from "../../../packages/platform/observability/src/telemetry.ts";
 import type { AuthorityJobName } from "../../../packages/platform/queue/src/bullmq-authority-transport.ts";
 
 export type WorkerIterationResult = Readonly<{
@@ -30,13 +31,25 @@ export class AuthorityWorker {
     this.competency = competency;
   }
 
-  /** BullMQ delivery entrypoint. Failures are rethrown after the DB attempt is recorded. */
   async processJob(name: AuthorityJobName, eventId: string): Promise<WorkerIterationResult> {
-    if (name === "verification.requested") return this.processVerificationRequest(eventId);
-    return this.processPassedVerification(eventId);
+    return withSpan("authority.delivery", { "authority.event_type": name }, async () => {
+      try {
+        const result = name === "verification.requested"
+          ? await this.processVerificationRequest(eventId)
+          : await this.processPassedVerification(eventId);
+        authorityDeliveryCounter.add(1, {
+          "authority.event_type": name,
+          "authority.result": result.verificationErrors > 0 ? "system_error" : "processed",
+        });
+        return result;
+      } catch (error) {
+        dependencyFailureCounter.add(1, { dependency: name === "verification.requested" ? "verifier" : "evidence_persistence" });
+        authorityDeliveryCounter.add(1, { "authority.event_type": name, "authority.result": "delivery_failure" });
+        throw error;
+      }
+    });
   }
 
-  /** Deterministic direct batch path retained for tests/recovery operations. */
   async runOnce(): Promise<WorkerIterationResult> {
     let verificationProcessed = 0;
     let verificationErrors = 0;
