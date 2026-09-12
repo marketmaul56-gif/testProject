@@ -1,0 +1,72 @@
+name: M12 OCI Artifact Smoke
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply version-controlled migrations
+        run: >-
+          docker run --rm --network host
+          -v "$PWD:/workspace" -w /workspace
+          -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform
+          postgres:18 bash scripts/apply-migrations.sh
+      - name: Build immutable API image
+        run: docker build --file infrastructure/deployment/Dockerfile.api --tag skill-platform-api:${GITHUB_SHA} .
+      - name: Build immutable web image
+        run: docker build --file infrastructure/deployment/Dockerfile.web --tag skill-platform-web:${GITHUB_SHA} .
+      - name: Smoke API liveness and readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name m12-api --network host \
+            -e NODE_ENV=production \
+            -e PORT=3001 \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform \
+            -e 'AUTH_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform?options=-c%20search_path%3Dauth' \
+            -e BETTER_AUTH_URL=http://127.0.0.1:3001 \
+            -e BETTER_AUTH_SECRET=ci-production-smoke-secret-0123456789abcdef \
+            -e TRUSTED_ORIGINS=http://127.0.0.1:3000 \
+            skill-platform-api:${GITHUB_SHA}
+          trap 'docker logs m12-api || true; docker rm -f m12-api m12-web >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3001/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3001/healthz | grep '"status":"ok"'
+          curl --fail --silent http://127.0.0.1:3001/readyz | grep '"status":"ready"'
+      - name: Smoke web standalone runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name m12-web --network host \
+            -e NODE_ENV=production \
+            -e PORT=3000 \
+            -e INTERNAL_API_BASE_URL=http://127.0.0.1:3001/api/v1 \
+            skill-platform-web:${GITHUB_SHA}
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3000/ >/dev/null
