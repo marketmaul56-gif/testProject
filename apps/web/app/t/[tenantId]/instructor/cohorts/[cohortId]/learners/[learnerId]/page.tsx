@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { getInstructorLearner, postGuidance } from "../../../../../../../lib/api";
+import { getInstructorLearner, postGuidance } from "@/lib/api";
 
 function State({ value }: { value: string }) {
   return <span className="pill" data-state={value}>{value.replaceAll("_", " ")}</span>;

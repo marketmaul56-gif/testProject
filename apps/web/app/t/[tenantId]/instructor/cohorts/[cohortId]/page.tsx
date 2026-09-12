@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getInstructorCohort } from "../../../../../lib/api";
+import { getInstructorCohort } from "@/lib/api";
 
 export default async function CohortPage({ params }: { params: Promise<{ tenantId: string; cohortId: string }> }) {
   const { tenantId, cohortId } = await params;

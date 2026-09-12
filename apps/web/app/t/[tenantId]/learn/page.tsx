@@ -1,4 +1,4 @@
-import { getLearnerOverview } from "../../../lib/api";
+import { getLearnerOverview } from "@/lib/api";
 
 function State({ value }: { value: string }) {
   return <span className="pill" data-state={value}>{value.replaceAll("_", " ")}</span>;
