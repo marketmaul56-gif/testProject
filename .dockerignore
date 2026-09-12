@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
+*.dump
+*.sha256
