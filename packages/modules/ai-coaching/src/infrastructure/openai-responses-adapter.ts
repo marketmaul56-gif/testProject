@@ -33,10 +33,15 @@ function extractOutputText(response: z.infer<typeof responseEnvelopeSchema>): st
 const structuredOutputSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["message"],
+  required: ["message", "followUpQuestion"],
   properties: {
     message: { type: "string", minLength: 1, maxLength: 4000 },
-    followUpQuestion: { type: "string", minLength: 1, maxLength: 1000 },
+    followUpQuestion: {
+      anyOf: [
+        { type: "string", minLength: 1, maxLength: 1000 },
+        { type: "null" },
+      ],
+    },
   },
 } as const;
 
