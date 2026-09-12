@@ -1,0 +1,63 @@
+name: Better Auth Schema Preview
+
+on:
+  push:
+    branches: ['m12/implementation-foundation']
+    paths:
+      - '.github/workflows/auth-schema-preview.yml'
+      - 'packages/platform/auth/src/better-auth.ts'
+      - 'packages/platform/auth/src/better-auth.cli.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Prepare isolated auth schema
+        env:
+          PGPASSWORD: postgres
+        run: |
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y postgresql-client >/dev/null
+          psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA IF NOT EXISTS auth;'
+      - name: Generate Better Auth SQL
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+          AUTH_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform?options=-c%20search_path%3Dauth
+        run: pnpm run auth:schema
+      - name: Verify generated schema contains core and TOTP tables
+        run: |
+          test -s prisma/generated/better-auth.sql
+          grep -qi 'twoFactor' prisma/generated/better-auth.sql || grep -qi 'two_factor' prisma/generated/better-auth.sql
+          grep -qi 'session' prisma/generated/better-auth.sql
+          grep -qi 'user' prisma/generated/better-auth.sql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: better-auth-schema-preview
+          path: prisma/generated/better-auth.sql
