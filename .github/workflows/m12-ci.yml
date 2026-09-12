@@ -76,6 +76,9 @@ jobs:
             IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'course_versions_immutable_after_publish') THEN
               RAISE EXCEPTION 'missing course version immutability trigger';
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_events_append_only') THEN
+              RAISE EXCEPTION 'missing append-only audit trigger';
+            END IF;
             IF to_regclass('public.member_roles') IS NULL THEN
               RAISE EXCEPTION 'missing application authorization roles';
             END IF;
