@@ -210,6 +210,19 @@ model ProjectDefinition {
   @@map("project_definitions")
 }
 
+model ProjectSkillAlignment {
+  id                  String   @id @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  projectDefinitionId String   @map("project_definition_id") @db.Uuid
+  skillId             String   @map("skill_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "project_skill_alignments_tenant_id_id_key")
+  @@unique([tenantId, projectDefinitionId, skillId], map: "project_skill_alignments_tenant_project_skill_key")
+  @@index([tenantId, skillId, projectDefinitionId], map: "project_skill_alignments_skill_idx")
+  @@map("project_skill_alignments")
+}
+
 model ProjectArtifact {
   id                  String   @id @db.Uuid
   tenantId            String   @map("tenant_id") @db.Uuid
@@ -258,11 +271,13 @@ model VerificationAttempt {
   status               VerificationAttemptStatus @default(PENDING)
   verifierKey          String                    @map("verifier_key")
   verifierVersion      String                    @map("verifier_version")
+  requestId            String                    @map("request_id")
   createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt            DateTime?                 @map("started_at") @db.Timestamptz(6)
   completedAt          DateTime?                 @map("completed_at") @db.Timestamptz(6)
 
   @@unique([tenantId, id], map: "verification_attempts_tenant_id_id_key")
+  @@unique([tenantId, requestId], map: "verification_attempts_tenant_request_id_key")
   @@index([tenantId, status], map: "verification_attempts_tenant_status_idx")
   @@map("verification_attempts")
 }
