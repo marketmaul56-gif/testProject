@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { uuidV7 } from "../../../platform/audit/src/security-audit.ts";
+import { uuidV7 } from "../../../../platform/audit/src/security-audit.ts";
 import type {
   AuthoritativeVerificationResult,
   SafeVerifierDiagnostic,
