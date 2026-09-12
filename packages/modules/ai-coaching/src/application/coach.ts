@@ -14,10 +14,13 @@ import {
 import type { AiCoachingTelemetry } from "./telemetry.ts";
 
 export class AiCoachingService {
-  constructor(
-    private readonly provider: AiCoachingProvider,
-    private readonly telemetry: AiCoachingTelemetry,
-  ) {}
+  private readonly provider: AiCoachingProvider;
+  private readonly telemetry: AiCoachingTelemetry;
+
+  constructor(provider: AiCoachingProvider, telemetry: AiCoachingTelemetry) {
+    this.provider = provider;
+    this.telemetry = telemetry;
+  }
 
   async coach(rawRequest: unknown): Promise<CoachingResponse> {
     const request: CoachingRequest = coachingRequestSchema.parse(rawRequest);
