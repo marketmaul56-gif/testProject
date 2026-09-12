@@ -1,0 +1,2 @@
+export const EXPERIENCE_READ_MODEL = Symbol("EXPERIENCE_READ_MODEL");
+export const GUIDANCE_WRITER = Symbol("GUIDANCE_WRITER");
