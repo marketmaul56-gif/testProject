@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const coachingDraftSchema = z.object({
   message: z.string().trim().min(1).max(4_000),
-  followUpQuestion: z.string().trim().min(1).max(1_000).optional(),
+  followUpQuestion: z.string().trim().min(1).max(1_000).nullable(),
 }).strict();
 
 export type CoachingDraft = z.infer<typeof coachingDraftSchema>;
