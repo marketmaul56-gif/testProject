@@ -94,6 +94,18 @@ jobs:
             IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'skill_evidence_requires_pass') THEN
               RAISE EXCEPTION 'missing skill_evidence_requires_pass trigger';
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'verification_result_provenance_guard') THEN
+              RAISE EXCEPTION 'missing verification provenance guard';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'competency_projection_integrity_guard') THEN
+              RAISE EXCEPTION 'missing competency projection integrity guard';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'verification_attempts_tenant_request_id_key') THEN
+              RAISE EXCEPTION 'missing verification retry idempotency index';
+            END IF;
+            IF to_regclass('public.project_skill_alignments') IS NULL THEN
+              RAISE EXCEPTION 'missing project skill alignment authority table';
+            END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'course_versions_immutable_after_publish') THEN
               RAISE EXCEPTION 'missing course version immutability trigger';
             END IF;
@@ -158,3 +170,44 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
         run: node --test tests/integration/experience-read-model.test.ts
+
+  authority-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply migrations to fresh PostgreSQL 18 database
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r migration; do
+            psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f "${migration}"
+          done < <(find prisma/migrations -mindepth 2 -maxdepth 2 -name migration.sql -print | sort)
+      - name: Canonical authority chain integration test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: node --test tests/integration/authority-chain.test.ts
