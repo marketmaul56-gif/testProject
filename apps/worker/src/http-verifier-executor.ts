@@ -41,6 +41,14 @@ export class HttpVerifierExecutor implements VerifierExecutor {
     const text = await response.text();
     if (text.length > 64 * 1024) throw new Error("verifier dispatcher response exceeds safe limit");
     if (!response.ok) throw new Error(`verifier dispatcher unavailable (${response.status})`);
-    return responseSchema.parse(JSON.parse(text));
+
+    const parsed = responseSchema.parse(JSON.parse(text));
+    const diagnostic: VerifierExecutionResult["diagnostic"] = {
+      classification: parsed.diagnostic.classification,
+      summaryCode: parsed.diagnostic.summaryCode,
+      ...(parsed.diagnostic.passedChecks === undefined ? {} : { passedChecks: parsed.diagnostic.passedChecks }),
+      ...(parsed.diagnostic.totalChecks === undefined ? {} : { totalChecks: parsed.diagnostic.totalChecks }),
+    };
+    return Object.freeze({ outcome: parsed.outcome, diagnostic });
   }
 }
