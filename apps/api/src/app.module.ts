@@ -11,12 +11,14 @@ import type { RuntimeConfig } from "../../../packages/platform/config/src/config
 import { ExperienceReadModel } from "../../../packages/platform/db/src/experience-read-model.ts";
 import { AiCoachingController } from "./ai-coaching.controller.ts";
 import { InstructorExperienceController, LearnerExperienceController } from "./experience.controller.ts";
+import { LearnerSubmissionApplication } from "./learner-submission-application.ts";
 import { MeController } from "./me.controller.ts";
 import { LearnerSubmissionController } from "./submissions.controller.ts";
 import {
   AI_COACHING_SERVICE,
   EXPERIENCE_READ_MODEL,
   GUIDANCE_WRITER,
+  LEARNER_SUBMISSION_APPLICATION,
   PRACTICE_SUBMISSION_COMMANDS,
   PROJECT_SUBMISSION_COMMANDS,
 } from "./tokens.ts";
@@ -28,6 +30,12 @@ export class AppModule {
       ? new OpenAiResponsesAdapter(aiConfig.apiKey, aiConfig.model, aiConfig.timeoutMs)
       : new UnavailableAiCoachingProvider();
     const aiCoachingService = new AiCoachingService(aiProvider, new ConsoleAiCoachingTelemetry());
+    const practiceSubmissionCommands = new PgPracticeSubmissionCommands(pool);
+    const projectSubmissionCommands = new PgProjectSubmissionCommands(pool);
+    const learnerSubmissionApplication = new LearnerSubmissionApplication(
+      practiceSubmissionCommands,
+      projectSubmissionCommands,
+    );
 
     return {
       module: AppModule,
@@ -42,8 +50,9 @@ export class AppModule {
         { provide: EXPERIENCE_READ_MODEL, useValue: new ExperienceReadModel(pool) },
         { provide: GUIDANCE_WRITER, useValue: new PgGuidanceWriter(pool) },
         { provide: AI_COACHING_SERVICE, useValue: aiCoachingService },
-        { provide: PRACTICE_SUBMISSION_COMMANDS, useValue: new PgPracticeSubmissionCommands(pool) },
-        { provide: PROJECT_SUBMISSION_COMMANDS, useValue: new PgProjectSubmissionCommands(pool) },
+        { provide: PRACTICE_SUBMISSION_COMMANDS, useValue: practiceSubmissionCommands },
+        { provide: PROJECT_SUBMISSION_COMMANDS, useValue: projectSubmissionCommands },
+        { provide: LEARNER_SUBMISSION_APPLICATION, useValue: learnerSubmissionApplication },
       ],
     };
   }
