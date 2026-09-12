@@ -1,0 +1,48 @@
+name: M12 Recovery Drill
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-backup-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply production migrations with PostgreSQL 18 client
+        run: >-
+          docker run --rm --network host
+          -v "$PWD:/workspace" -w /workspace
+          -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform
+          postgres:18 bash scripts/apply-migrations.sh
+      - name: Provision empty restore target
+        run: >-
+          docker run --rm --network host
+          postgres:18 psql
+          postgresql://postgres:postgres@localhost:5432/skill_platform
+          -v ON_ERROR_STOP=1
+          -c "CREATE DATABASE skill_platform_restore"
+      - name: Backup and restore authority-preserving snapshot
+        run: >-
+          docker run --rm --network host
+          -v "$PWD:/workspace" -w /workspace
+          -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform
+          -e RESTORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform_restore
+          postgres:18 bash tests/recovery/backup-restore.sh
