@@ -9,6 +9,7 @@ export type Action =
   | "cohort:read"
   | "cohort:manage"
   | "guidance:create"
+  | "ai:coach"
   | "verification:write"
   | "evidence:issue"
   | "competency:project";
@@ -63,7 +64,7 @@ export function authorize(principal: ApplicationPrincipal, action: Action, resou
   }
 
   if (principal.roles.includes("LEARNER") && isRelatedLearner(principal, resource)) {
-    if (["learning:read", "submission:create", "submission:read", "evidence:read", "competency:read"].includes(action)) return allow();
+    if (["learning:read", "submission:create", "submission:read", "evidence:read", "competency:read", "ai:coach"].includes(action)) return allow();
   }
 
   return deny("default deny: no authorized role/resource relationship");
