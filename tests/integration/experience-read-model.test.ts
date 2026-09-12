@@ -35,6 +35,7 @@ const id = {
   practiceCompetency: "00000000-0000-7000-8000-00000000001c",
   projectCompetency: "00000000-0000-7000-8000-00000000001d",
   guidance: "00000000-0000-7000-8000-00000000001e",
+  projectSkillAlignment: "00000000-0000-7000-8000-00000000001f",
 } as const;
 
 test("learner and instructor views keep progress, system errors, evidence and competency distinct", async () => {
@@ -86,6 +87,8 @@ test("learner and instructor views keep progress, system errors, evidence and co
         VALUES ('${id.project}', '${id.tenant}', 'typed-cli', 'Build a Typed CLI');
       INSERT INTO project_learning_alignments (id, tenant_id, course_version_id, project_definition_id, position)
         VALUES ('${id.alignment}', '${id.tenant}', '${id.courseVersion}', '${id.project}', 1);
+      INSERT INTO project_skill_alignments (id, tenant_id, project_definition_id, skill_id)
+        VALUES ('${id.projectSkillAlignment}', '${id.tenant}', '${id.project}', '${id.projectSkill}');
       INSERT INTO project_artifacts (id, tenant_id, learner_id, project_definition_id)
         VALUES ('${id.artifact}', '${id.tenant}', '${id.learner}', '${id.project}');
       INSERT INTO artifact_revisions (id, tenant_id, artifact_id, revision_number, object_key, content_hash, sealed_at)
