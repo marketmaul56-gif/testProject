@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./experience": "./src/experience.ts"
+    "./experience": "./src/experience.ts",
+    "./ai-coaching": "./src/ai-coaching.ts"
   },
   "dependencies": {
     "zod": "4.6.2"
