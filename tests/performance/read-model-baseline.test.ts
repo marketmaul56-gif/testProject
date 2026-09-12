@@ -5,6 +5,12 @@ import { Pool } from "pg";
 import { uuidV7 } from "../../packages/platform/audit/src/security-audit.ts";
 import { ExperienceReadModel } from "../../packages/platform/db/src/experience-read-model.ts";
 
+const approvedTargets = {
+  learnerOverviewP95Ms: 100,
+  instructorCohortOverviewP95Ms: 200,
+  dataset: { learners: 50, lessons: 20, progressRows: 1000 },
+} as const;
+
 const ids = {
   tenant: "00000000-0000-7000-8000-000000000401",
   instructor: "00000000-0000-7000-8000-000000000402",
@@ -40,7 +46,7 @@ async function measure(run: () => Promise<unknown>, samples: number): Promise<Me
   };
 }
 
-test("measure core learner and instructor read-model baseline on representative MVP data", async () => {
+test("core learner and instructor read-model p95 stay within approved M12.8 release targets", async () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
   try {
     await pool.query(`
@@ -65,7 +71,7 @@ test("measure core learner and instructor read-model baseline on representative 
     `);
 
     const lessonIds: string[] = [];
-    for (let position = 1; position <= 20; position += 1) {
+    for (let position = 1; position <= approvedTargets.dataset.lessons; position += 1) {
       const lessonId = uuidV7(1_800_000_000_000 + position);
       lessonIds.push(lessonId);
       await pool.query(
@@ -76,7 +82,7 @@ test("measure core learner and instructor read-model baseline on representative 
     }
 
     const learnerIds: string[] = [];
-    for (let learnerIndex = 0; learnerIndex < 50; learnerIndex += 1) {
+    for (let learnerIndex = 0; learnerIndex < approvedTargets.dataset.learners; learnerIndex += 1) {
       const learnerId = uuidV7(1_800_000_100_000 + learnerIndex);
       const membershipId = uuidV7(1_800_000_200_000 + learnerIndex);
       learnerIds.push(learnerId);
@@ -100,6 +106,12 @@ test("measure core learner and instructor read-model baseline on representative 
       }
     }
 
+    const progressCount = await pool.query(
+      `SELECT count(*)::integer AS count FROM lesson_progress WHERE tenant_id=$1::uuid`,
+      [ids.tenant],
+    );
+    assert.equal(progressCount.rows[0]?.count, approvedTargets.dataset.progressRows);
+
     const readModel = new ExperienceReadModel(pool);
     const learnerId = learnerIds[0];
     assert.ok(learnerId);
@@ -117,9 +129,22 @@ test("measure core learner and instructor read-model baseline on representative 
     assert.ok(Number.isFinite(learnerMetric.p95Ms));
     assert.ok(Number.isFinite(instructorMetric.p95Ms));
 
+    assert.ok(
+      learnerMetric.p95Ms <= approvedTargets.learnerOverviewP95Ms,
+      `learner overview p95 ${learnerMetric.p95Ms}ms exceeds approved ${approvedTargets.learnerOverviewP95Ms}ms target`,
+    );
+    assert.ok(
+      instructorMetric.p95Ms <= approvedTargets.instructorCohortOverviewP95Ms,
+      `instructor cohort overview p95 ${instructorMetric.p95Ms}ms exceeds approved ${approvedTargets.instructorCohortOverviewP95Ms}ms target`,
+    );
+
     console.log(`M12_PERF_BASELINE ${JSON.stringify({
-      targetStatus: "M11_NUMERIC_TARGETS_NOT_RECOVERED",
-      dataset: { learners: 50, lessons: 20, progressRows: 1000 },
+      targetStatus: "APPROVED_CHANGE_REVIEW_M12_8",
+      targets: {
+        learnerOverviewP95Ms: approvedTargets.learnerOverviewP95Ms,
+        instructorCohortOverviewP95Ms: approvedTargets.instructorCohortOverviewP95Ms,
+      },
+      dataset: approvedTargets.dataset,
       learnerOverview: learnerMetric,
       instructorCohortOverview: instructorMetric,
     })}`);
