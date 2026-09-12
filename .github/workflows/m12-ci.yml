@@ -29,6 +29,8 @@ jobs:
         run: pnpm run test:domain
       - name: Negative authorization and input-security tests
         run: pnpm run test:security
+      - name: Contract tests
+        run: pnpm run test:contract
       - name: Prisma schema validation
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
