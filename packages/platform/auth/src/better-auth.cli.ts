@@ -12,6 +12,7 @@ const schemaConfig: RuntimeConfig = Object.freeze({
   betterAuthUrl: "http://localhost:3001",
   betterAuthSecret: "schema-generation-only-secret-32-characters-minimum",
   trustedOrigins: Object.freeze(["http://localhost:3000"]),
+  ai: Object.freeze({ enabled: false, apiKey: null, model: null, timeoutMs: 8_000 }),
 });
 
 // The Better Auth CLI discovers an exported `auth` instance. Runtime creation
