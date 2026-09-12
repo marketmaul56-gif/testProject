@@ -14,7 +14,20 @@ const environmentSchema = z.object({
   BETTER_AUTH_URL: z.string().url(),
   BETTER_AUTH_SECRET: z.string().min(32),
   TRUSTED_ORIGINS: z.string().min(1),
-}).passthrough();
+  OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  OPENAI_MODEL: z.string().trim().min(1).optional(),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(8_000),
+}).passthrough().superRefine((value, ctx) => {
+  const hasKey = Boolean(value.OPENAI_API_KEY);
+  const hasModel = Boolean(value.OPENAI_MODEL);
+  if (hasKey !== hasModel) {
+    ctx.addIssue({
+      code: "custom",
+      path: [hasKey ? "OPENAI_MODEL" : "OPENAI_API_KEY"],
+      message: "OPENAI_API_KEY and OPENAI_MODEL must be configured together",
+    });
+  }
+});
 
 export type RuntimeConfig = Readonly<{
   environment: "local" | "test" | "staging" | "production";
@@ -24,6 +37,12 @@ export type RuntimeConfig = Readonly<{
   betterAuthUrl: string;
   betterAuthSecret: string;
   trustedOrigins: readonly string[];
+  ai: Readonly<{
+    enabled: boolean;
+    apiKey: string | null;
+    model: string | null;
+    timeoutMs: number;
+  }>;
 }>;
 
 export function loadRuntimeConfig(input: Record<string, string | undefined>): RuntimeConfig {
@@ -48,5 +67,11 @@ export function loadRuntimeConfig(input: Record<string, string | undefined>): Ru
     betterAuthUrl: parsed.BETTER_AUTH_URL,
     betterAuthSecret: parsed.BETTER_AUTH_SECRET,
     trustedOrigins: Object.freeze(trustedOrigins),
+    ai: Object.freeze({
+      enabled: Boolean(parsed.OPENAI_API_KEY && parsed.OPENAI_MODEL),
+      apiKey: parsed.OPENAI_API_KEY ?? null,
+      model: parsed.OPENAI_MODEL ?? null,
+      timeoutMs: parsed.AI_TIMEOUT_MS,
+    }),
   });
 }
