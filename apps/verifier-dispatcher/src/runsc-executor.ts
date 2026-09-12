@@ -6,6 +6,7 @@ import type {
   VerifierExecutionResult,
   VerifierExecutor,
 } from "../../../packages/modules/verification/src/application/authority.ts";
+import { verifierDuration, withSpan } from "../../../packages/platform/observability/src/telemetry.ts";
 import type { VerifierSandboxPolicy } from "./sandbox-policy.ts";
 
 const resultSchema = z.object({
@@ -99,45 +100,52 @@ export class RunscVerifierExecutor implements VerifierExecutor {
   }
 
   async execute(request: VerifierExecutionRequest): Promise<VerifierExecutionResult> {
-    const bundle = await this.bundles.prepare(request, this.policy);
-    const isolatedEnv = Object.freeze({ PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" });
-    try {
-      const execution = await this.runner.run(
-        "runsc",
-        ["--rootless", "--network=none", "run", bundle.containerId],
-        {
-          cwd: bundle.bundlePath,
-          timeoutMs: this.policy.wallClockMs,
-          maxOutputBytes: this.policy.maxOutputBytes,
-          // No application, database, object-storage, AI, cloud, or hidden-test references.
-          env: isolatedEnv,
-        },
-      );
-      if (execution.exitCode !== 0) throw new Error("sandboxed verifier returned infrastructure error");
-      const parsed = resultSchema.parse(JSON.parse(await readFile(bundle.resultPath, "utf8")));
-      return Object.freeze({
-        outcome: parsed.outcome,
-        diagnostic: Object.freeze({
-          classification: "VERIFICATION" as const,
-          summaryCode: parsed.summaryCode,
-          ...(parsed.passedChecks === undefined ? {} : { passedChecks: parsed.passedChecks }),
-          ...(parsed.totalChecks === undefined ? {} : { totalChecks: parsed.totalChecks }),
-        }),
-      });
-    } finally {
-      // Cleanup is attempted even after timeout/output-limit/runtime errors. The
-      // runtime delete is best-effort; bundle destruction remains mandatory.
+    return withSpan("verifier.execute", {
+      "verifier.key": request.verifierKey,
+      "verifier.version": request.verifierVersion,
+    }, async () => {
+      const started = performance.now();
+      const bundle = await this.bundles.prepare(request, this.policy);
+      const isolatedEnv = Object.freeze({ PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" });
       try {
-        await this.runner.run("runsc", ["--rootless", "delete", "--force", bundle.containerId], {
-          cwd: bundle.bundlePath,
-          timeoutMs: 5_000,
-          maxOutputBytes: 8_192,
-          env: isolatedEnv,
+        const execution = await this.runner.run(
+          "runsc",
+          ["--rootless", "--network=none", "run", bundle.containerId],
+          {
+            cwd: bundle.bundlePath,
+            timeoutMs: this.policy.wallClockMs,
+            maxOutputBytes: this.policy.maxOutputBytes,
+            env: isolatedEnv,
+          },
+        );
+        if (execution.exitCode !== 0) throw new Error("sandboxed verifier returned infrastructure error");
+        const parsed = resultSchema.parse(JSON.parse(await readFile(bundle.resultPath, "utf8")));
+        verifierDuration.record(performance.now() - started, { "verifier.outcome": parsed.outcome });
+        return Object.freeze({
+          outcome: parsed.outcome,
+          diagnostic: Object.freeze({
+            classification: "VERIFICATION" as const,
+            summaryCode: parsed.summaryCode,
+            ...(parsed.passedChecks === undefined ? {} : { passedChecks: parsed.passedChecks }),
+            ...(parsed.totalChecks === undefined ? {} : { totalChecks: parsed.totalChecks }),
+          }),
         });
-      } catch {
-        // Dedicated-node runtime reconciliation is handled by operational cleanup.
+      } catch (error) {
+        verifierDuration.record(performance.now() - started, { "verifier.outcome": "ERROR" });
+        throw error;
+      } finally {
+        try {
+          await this.runner.run("runsc", ["--rootless", "delete", "--force", bundle.containerId], {
+            cwd: bundle.bundlePath,
+            timeoutMs: 5_000,
+            maxOutputBytes: 8_192,
+            env: isolatedEnv,
+          });
+        } catch {
+          // Dedicated-node runtime reconciliation is handled by operational cleanup.
+        }
+        await bundle.cleanup();
       }
-      await bundle.cleanup();
-    }
+    });
   }
 }
