@@ -34,6 +34,25 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
         run: pnpm run db:validate
 
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Web type check
+        run: pnpm --filter @skill-platform/web typecheck
+      - name: Next.js production build
+        env:
+          API_BASE_URL: http://127.0.0.1:3001
+        run: pnpm --filter @skill-platform/web build
+
   migration:
     runs-on: ubuntu-latest
     services:
@@ -96,3 +115,44 @@ jobs:
             END IF;
           END $$;
           SQL
+
+  experience-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply migrations to fresh PostgreSQL 18 database
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r migration; do
+            psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f "${migration}"
+          done < <(find prisma/migrations -mindepth 2 -maxdepth 2 -name migration.sql -print | sort)
+      - name: Learner/instructor experience integration test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: node --test tests/integration/experience-read-model.test.ts
