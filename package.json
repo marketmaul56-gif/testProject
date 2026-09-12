@@ -16,7 +16,7 @@
     "check": "pnpm run check:architecture && pnpm run typecheck && pnpm run test",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
-    "auth:schema": "auth generate --config packages/platform/auth/src/better-auth.ts --adapter kysely --output prisma/generated/better-auth.sql --yes"
+    "auth:schema": "auth generate --config packages/platform/auth/src/better-auth.cli.ts --adapter kysely --output prisma/generated/better-auth.sql --yes"
   },
   "dependencies": {
     "@nestjs/common": "12.0.1",
