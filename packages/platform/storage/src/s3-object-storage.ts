@@ -83,6 +83,7 @@ export class S3ObjectStorage {
 
   async assertUploadedObject(input: Readonly<{
     objectKey: string;
+    contentType: string;
     contentLength: number;
     contentHash: string;
   }>): Promise<void> {
@@ -93,6 +94,7 @@ export class S3ObjectStorage {
       ChecksumMode: "ENABLED",
     }));
     if (head.ContentLength !== input.contentLength) throw new Error("uploaded artifact length does not match upload intent");
+    if (head.ContentType !== input.contentType) throw new Error("uploaded artifact media type does not match upload intent");
     if (head.Metadata?.["content-hash"] !== input.contentHash) throw new Error("uploaded artifact metadata hash does not match upload intent");
     if (head.ChecksumSHA256 && head.ChecksumSHA256 !== expectedChecksum) throw new Error("uploaded artifact checksum does not match upload intent");
   }
