@@ -16,5 +16,5 @@
     "noEmit": true
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "prisma.config.ts"],
-  "exclude": ["packages/platform/db/generated/**"]
+  "exclude": ["apps/web/**", "packages/platform/db/generated/**"]
 }
