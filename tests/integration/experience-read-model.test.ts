@@ -75,8 +75,8 @@ test("learner and instructor views keep progress, system errors, evidence and co
         VALUES ('${id.practiceRevision}', '${id.tenant}', '${id.practice}', '${id.practiceSkill}', 1, '{"kind":"code"}'::jsonb);
       INSERT INTO practice_submissions (id, tenant_id, learner_id, practice_revision_id, attempt_number, request_id, artifact)
         VALUES ('${id.practiceSubmission}', '${id.tenant}', '${id.learner}', '${id.practiceRevision}', 1, 'req-practice-1', '{"source":"code"}'::jsonb);
-      INSERT INTO verification_attempts (id, tenant_id, practice_submission_id, status, verifier_key, verifier_version, started_at, completed_at)
-        VALUES ('${id.practiceAttempt}', '${id.tenant}', '${id.practiceSubmission}', 'COMPLETED', 'code-ts', '1', now(), now());
+      INSERT INTO verification_attempts (id, tenant_id, practice_submission_id, status, verifier_key, verifier_version, request_id, started_at, completed_at)
+        VALUES ('${id.practiceAttempt}', '${id.tenant}', '${id.practiceSubmission}', 'COMPLETED', 'code-ts', '1', 'verify-practice-1', now(), now());
       INSERT INTO verification_results (id, tenant_id, verification_attempt_id, learner_id, outcome, diagnostic, completed_at)
         VALUES ('${id.practiceResult}', '${id.tenant}', '${id.practiceAttempt}', '${id.learner}', 'ERROR', '{"classification":"INFRASTRUCTURE"}'::jsonb, now());
       INSERT INTO competency_states (id, tenant_id, learner_id, skill_id, status, evidence_count, projected_at)
@@ -92,8 +92,8 @@ test("learner and instructor views keep progress, system errors, evidence and co
         VALUES ('${id.revision}', '${id.tenant}', '${id.artifact}', 1, 'test/artifact-1', 'sha256:test', now());
       INSERT INTO project_submissions (id, tenant_id, learner_id, artifact_revision_id, request_id)
         VALUES ('${id.projectSubmission}', '${id.tenant}', '${id.learner}', '${id.revision}', 'req-project-1');
-      INSERT INTO verification_attempts (id, tenant_id, project_submission_id, status, verifier_key, verifier_version, started_at, completed_at)
-        VALUES ('${id.projectAttempt}', '${id.tenant}', '${id.projectSubmission}', 'COMPLETED', 'project-rubric', '1', now(), now());
+      INSERT INTO verification_attempts (id, tenant_id, project_submission_id, status, verifier_key, verifier_version, request_id, started_at, completed_at)
+        VALUES ('${id.projectAttempt}', '${id.tenant}', '${id.projectSubmission}', 'COMPLETED', 'project-rubric', '1', 'verify-project-1', now(), now());
       INSERT INTO verification_results (id, tenant_id, verification_attempt_id, learner_id, outcome, diagnostic, completed_at)
         VALUES ('${id.projectResult}', '${id.tenant}', '${id.projectAttempt}', '${id.learner}', 'PASSED', '{"checks":"passed"}'::jsonb, now());
       INSERT INTO skill_evidence (id, tenant_id, learner_id, skill_id, verification_result_id, issued_at)
