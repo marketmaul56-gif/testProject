@@ -6,18 +6,23 @@ import { OpenAiResponsesAdapter } from "../../../packages/modules/ai-coaching/sr
 import { UnavailableAiCoachingProvider } from "../../../packages/modules/ai-coaching/src/infrastructure/unavailable-provider.ts";
 import { PgGuidanceWriter } from "../../../packages/modules/cohorts/src/infrastructure/pg-guidance-writer.ts";
 import { PgPracticeSubmissionCommands } from "../../../packages/modules/practice/src/infrastructure/pg-submission-commands.ts";
+import { PgProjectArtifactCommands } from "../../../packages/modules/projects/src/infrastructure/pg-artifact-commands.ts";
 import { PgProjectSubmissionCommands } from "../../../packages/modules/projects/src/infrastructure/pg-submission-commands.ts";
 import type { RuntimeConfig } from "../../../packages/platform/config/src/config.ts";
 import { ExperienceReadModel } from "../../../packages/platform/db/src/experience-read-model.ts";
+import { S3ObjectStorage } from "../../../packages/platform/storage/src/s3-object-storage.ts";
 import { AiCoachingController } from "./ai-coaching.controller.ts";
 import { InstructorExperienceController, LearnerExperienceController } from "./experience.controller.ts";
 import { LearnerSubmissionApplication } from "./learner-submission-application.ts";
 import { MeController } from "./me.controller.ts";
+import { LearnerProjectArtifactApplication } from "./project-artifact-application.ts";
+import { LearnerProjectArtifactController } from "./project-artifacts.controller.ts";
 import { LearnerSubmissionController } from "./submissions.controller.ts";
 import {
   AI_COACHING_SERVICE,
   EXPERIENCE_READ_MODEL,
   GUIDANCE_WRITER,
+  LEARNER_PROJECT_ARTIFACT_APPLICATION,
   LEARNER_SUBMISSION_APPLICATION,
   PRACTICE_SUBMISSION_COMMANDS,
   PROJECT_SUBMISSION_COMMANDS,
@@ -25,7 +30,8 @@ import {
 
 @Module({})
 export class AppModule {
-  static forRoot(pool: Pool, aiConfig: RuntimeConfig["ai"]): DynamicModule {
+  static forRoot(pool: Pool, config: RuntimeConfig): DynamicModule {
+    const aiConfig = config.ai;
     const aiProvider = aiConfig.enabled && aiConfig.apiKey && aiConfig.model
       ? new OpenAiResponsesAdapter(aiConfig.apiKey, aiConfig.model, aiConfig.timeoutMs)
       : new UnavailableAiCoachingProvider();
@@ -36,6 +42,9 @@ export class AppModule {
       practiceSubmissionCommands,
       projectSubmissionCommands,
     );
+    const projectArtifactCommands = new PgProjectArtifactCommands(pool);
+    const objectStorage = config.storage ? new S3ObjectStorage(config.storage) : null;
+    const learnerProjectArtifactApplication = new LearnerProjectArtifactApplication(projectArtifactCommands, objectStorage);
 
     return {
       module: AppModule,
@@ -44,6 +53,7 @@ export class AppModule {
         LearnerExperienceController,
         InstructorExperienceController,
         AiCoachingController,
+        LearnerProjectArtifactController,
         LearnerSubmissionController,
       ],
       providers: [
@@ -53,6 +63,7 @@ export class AppModule {
         { provide: PRACTICE_SUBMISSION_COMMANDS, useValue: practiceSubmissionCommands },
         { provide: PROJECT_SUBMISSION_COMMANDS, useValue: projectSubmissionCommands },
         { provide: LEARNER_SUBMISSION_APPLICATION, useValue: learnerSubmissionApplication },
+        { provide: LEARNER_PROJECT_ARTIFACT_APPLICATION, useValue: learnerProjectArtifactApplication },
       ],
     };
   }
