@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
@@ -5,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import type { VerifierExecutionRequest } from "../../../packages/modules/verification/src/application/authority.ts";
 import { buildOciConfig, type VerifierSandboxPolicy } from "./sandbox-policy.ts";
 import type { PreparedVerifierBundle, VerifierBundleFactory } from "./runsc-executor.ts";
+
+export type TrustedArtifactResolver = Readonly<{
+  materialize(objectKey: string, target: string, maxBytes: number): Promise<void>;
+}>;
 
 async function assertWithin(root: string, candidate: string): Promise<string> {
   const [rootPath, candidatePath] = await Promise.all([realpath(root), realpath(candidate)]);
@@ -14,15 +19,32 @@ async function assertWithin(root: string, candidate: string): Promise<string> {
   return candidatePath;
 }
 
+function parseObjectReference(reference: string): Readonly<{ objectKey: string; expectedHash: string | null }> | null {
+  const match = /^object:\/\/([^?]+)(?:\?sha256=([^&]+))?$/.exec(reference);
+  if (!match) return null;
+  const objectKey = decodeURIComponent(match[1]!);
+  const expectedHash = match[2] ? decodeURIComponent(match[2]) : null;
+  if (!objectKey || objectKey.startsWith("/") || objectKey.includes("..")) throw new Error("invalid trusted artifact object key");
+  if (expectedHash && !/^sha256:[a-f0-9]{64}$/.test(expectedHash)) throw new Error("invalid trusted artifact hash");
+  return Object.freeze({ objectKey, expectedHash });
+}
+
 export class LocalVerifierBundleFactory implements VerifierBundleFactory {
   private readonly rootfsDir: string;
   private readonly hiddenBundlesRoot: string;
   private readonly artifactStagingRoot: string | null;
+  private readonly artifactResolver: TrustedArtifactResolver | null;
 
-  constructor(rootfsDir: string, hiddenBundlesRoot: string, artifactStagingRoot: string | null = null) {
+  constructor(
+    rootfsDir: string,
+    hiddenBundlesRoot: string,
+    artifactStagingRoot: string | null = null,
+    artifactResolver: TrustedArtifactResolver | null = null,
+  ) {
     this.rootfsDir = resolve(rootfsDir);
     this.hiddenBundlesRoot = resolve(hiddenBundlesRoot);
     this.artifactStagingRoot = artifactStagingRoot ? resolve(artifactStagingRoot) : null;
+    this.artifactResolver = artifactResolver;
   }
 
   async prepare(request: VerifierExecutionRequest, policy: VerifierSandboxPolicy): Promise<PreparedVerifierBundle> {
@@ -65,6 +87,19 @@ export class LocalVerifierBundleFactory implements VerifierBundleFactory {
       const sourceStat = await stat(source);
       if (!sourceStat.isFile() || sourceStat.size > maxBytes) throw new Error("invalid staged artifact");
       await cp(source, target, { force: false });
+      return;
+    }
+    const objectReference = parseObjectReference(reference);
+    if (objectReference && this.artifactResolver) {
+      await this.artifactResolver.materialize(objectReference.objectKey, target, maxBytes);
+      if (objectReference.expectedHash) {
+        const bytes = await readFile(target);
+        const actual = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+        if (actual !== objectReference.expectedHash) {
+          await rm(target, { force: true });
+          throw new Error("trusted object storage artifact hash does not match sealed revision");
+        }
+      }
       return;
     }
     throw new Error("artifact reference requires a configured trusted resolver");
