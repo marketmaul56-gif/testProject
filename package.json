@@ -10,6 +10,7 @@
   "scripts": {
     "check:architecture": "node scripts/check-architecture.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:api": "tsc -p tsconfig.api-build.json",
     "test:domain": "node --test tests/unit/*.test.ts",
     "test:security": "node --test tests/security/*.test.ts",
     "test:contract": "node --test tests/contract/*.test.ts",
