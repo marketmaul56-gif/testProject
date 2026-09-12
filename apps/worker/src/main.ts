@@ -5,6 +5,7 @@ import { PgCompetencyAuthority } from "../../../packages/modules/competency/src/
 import { VerificationDispatcherService } from "../../../packages/modules/verification/src/application/authority.ts";
 import { PgVerificationAuthority } from "../../../packages/modules/verification/src/infrastructure/pg-authority.ts";
 import { PgRuntimeVerificationQueue } from "../../../packages/modules/verification/src/infrastructure/pg-runtime-queue.ts";
+import { dependencyFailureCounter, startTelemetry } from "../../../packages/platform/observability/src/telemetry.ts";
 import { BullMqAuthorityTransport } from "../../../packages/platform/queue/src/bullmq-authority-transport.ts";
 import { AuthorityWorker } from "./authority-worker.ts";
 import { HttpVerifierExecutor } from "./http-verifier-executor.ts";
@@ -18,6 +19,7 @@ const schema = z.object({
 }).passthrough();
 
 export async function bootstrapWorker(): Promise<void> {
+  const telemetry = startTelemetry("skill-platform-worker");
   const config = schema.parse(process.env);
   const pool = new Pool({ connectionString: config.DATABASE_URL });
   const runtimeQueue = new PgRuntimeVerificationQueue(pool);
@@ -51,8 +53,7 @@ export async function bootstrapWorker(): Promise<void> {
           await transport.publish("verification.passed", eventId);
         }
       } catch (error) {
-        // PostgreSQL outbox remains canonical. A relay/Redis outage leaves the
-        // event unpublished so the next iteration can safely republish it.
+        dependencyFailureCounter.add(1, { dependency: "redis_delivery" });
         console.error(JSON.stringify({
           event: "authority_delivery_relay_error",
           message: error instanceof Error ? error.message : "unknown relay error",
@@ -63,6 +64,7 @@ export async function bootstrapWorker(): Promise<void> {
   } finally {
     await transport.close();
     await pool.end();
+    await telemetry.shutdown();
   }
 }
 
