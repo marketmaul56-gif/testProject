@@ -30,11 +30,13 @@ export class AuthorityWorker {
     this.competency = competency;
   }
 
+  /** BullMQ delivery entrypoint. Failures are rethrown after the DB attempt is recorded. */
   async processJob(name: AuthorityJobName, eventId: string): Promise<WorkerIterationResult> {
     if (name === "verification.requested") return this.processVerificationRequest(eventId);
     return this.processPassedVerification(eventId);
   }
 
+  /** Deterministic direct batch path retained for tests/recovery operations. */
   async runOnce(): Promise<WorkerIterationResult> {
     let verificationProcessed = 0;
     let verificationErrors = 0;
@@ -42,19 +44,22 @@ export class AuthorityWorker {
     let deliveryFailures = 0;
 
     for (const event of await this.queue.listVerificationRequests()) {
-      const result = await this.processVerificationRequest(event.eventId);
-      verificationProcessed += result.verificationProcessed;
-      verificationErrors += result.verificationErrors;
-      evidenceProcessed += result.evidenceProcessed;
-      deliveryFailures += result.deliveryFailures;
+      try {
+        const result = await this.processVerificationRequest(event.eventId);
+        verificationProcessed += result.verificationProcessed;
+        verificationErrors += result.verificationErrors;
+      } catch {
+        deliveryFailures += 1;
+      }
     }
 
     for (const eventId of await this.queue.listPassedEvents()) {
-      const result = await this.processPassedVerification(eventId);
-      verificationProcessed += result.verificationProcessed;
-      verificationErrors += result.verificationErrors;
-      evidenceProcessed += result.evidenceProcessed;
-      deliveryFailures += result.deliveryFailures;
+      try {
+        const result = await this.processPassedVerification(eventId);
+        evidenceProcessed += result.evidenceProcessed;
+      } catch {
+        deliveryFailures += 1;
+      }
     }
 
     return Object.freeze({ verificationProcessed, verificationErrors, evidenceProcessed, deliveryFailures });
