@@ -41,32 +41,15 @@ enum MembershipStatus {
   REMOVED
 }
 
+// Persistence mappings intentionally use scalar foreign-key identifiers.
+// Cross-module relationship integrity is enforced by PostgreSQL constraints in
+// version-controlled migrations; modules do not gain write access through ORM
+// relation traversal.
+
 model Tenant {
   id        String   @id @db.Uuid
   slug      String   @unique
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  members              Member[]
-  courses              Course[]
-  courseVersions       CourseVersion[]
-  skills               Skill[]
-  practiceDefinitions  PracticeDefinition[]
-  practiceRevisions    PracticeRevision[]
-  practiceSubmissions  PracticeSubmission[]
-  projectDefinitions   ProjectDefinition[]
-  projectArtifacts     ProjectArtifact[]
-  artifactRevisions    ArtifactRevision[]
-  projectSubmissions   ProjectSubmission[]
-  verificationAttempts VerificationAttempt[]
-  verificationResults  VerificationResult[]
-  skillEvidence        SkillEvidence[]
-  competencyStates     CompetencyState[]
-  cohorts              Cohort[]
-  cohortMemberships    CohortMembership[]
-  learningAssignments  LearningAssignment[]
-  instructorRoles      InstructorCohortRole[]
-  outboxEvents          OutboxEvent[]
-  auditEvents           AuditEvent[]
 
   @@map("tenants")
 }
@@ -78,21 +61,9 @@ model Member {
   displayName String?  @map("display_name")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-
-  enrollments         Enrollment[]
-  lessonProgress      LessonProgress[]
-  practiceSubmissions PracticeSubmission[]
-  projectArtifacts    ProjectArtifact[]
-  projectSubmissions  ProjectSubmission[]
-  skillEvidence       SkillEvidence[]
-  competencyStates    CompetencyState[]
-  cohortMemberships   CohortMembership[]
-  instructorRoles     InstructorCohortRole[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, authUserId])
-  @@index([tenantId])
+  @@unique([tenantId, id], map: "members_tenant_id_id_key")
+  @@unique([tenantId, authUserId], map: "members_tenant_id_auth_user_id_key")
+  @@index([tenantId], map: "members_tenant_id_idx")
   @@map("members")
 }
 
@@ -102,11 +73,8 @@ model Course {
   key       String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  versions CourseVersion[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, key])
+  @@unique([tenantId, id], map: "courses_tenant_id_id_key")
+  @@unique([tenantId, key], map: "courses_tenant_id_key_key")
   @@map("courses")
 }
 
@@ -120,15 +88,9 @@ model CourseVersion {
   publishedAt DateTime?             @map("published_at") @db.Timestamptz(6)
   createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  course      Course               @relation(fields: [courseId], references: [id], onDelete: Restrict)
-  chapters    ChapterVersion[]
-  enrollments Enrollment[]
-  assignments LearningAssignment[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, courseId, version])
-  @@index([tenantId, status])
+  @@unique([tenantId, id], map: "course_versions_tenant_id_id_key")
+  @@unique([tenantId, courseId, version], map: "course_versions_tenant_course_version_key")
+  @@index([tenantId, status], map: "course_versions_tenant_status_idx")
   @@map("course_versions")
 }
 
@@ -139,11 +101,8 @@ model ChapterVersion {
   position        Int
   title           String
 
-  courseVersion CourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
-  lessons       LessonVersion[]
-
-  @@unique([tenantId, id])
-  @@unique([courseVersionId, position])
+  @@unique([tenantId, id], map: "chapter_versions_tenant_id_id_key")
+  @@unique([courseVersionId, position], map: "chapter_versions_course_position_key")
   @@map("chapter_versions")
 }
 
@@ -155,12 +114,8 @@ model LessonVersion {
   title            String
   content          Json
 
-  chapterVersion ChapterVersion      @relation(fields: [chapterVersionId], references: [id], onDelete: Restrict)
-  practices      PracticeDefinition[]
-  lessonProgress LessonProgress[]
-
-  @@unique([tenantId, id])
-  @@unique([chapterVersionId, position])
+  @@unique([tenantId, id], map: "lesson_versions_tenant_id_id_key")
+  @@unique([chapterVersionId, position], map: "lesson_versions_chapter_position_key")
   @@map("lesson_versions")
 }
 
@@ -171,13 +126,8 @@ model Skill {
   name      String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  practiceRevisions PracticeRevision[]
-  evidence          SkillEvidence[]
-  competencyStates  CompetencyState[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, key])
+  @@unique([tenantId, id], map: "skills_tenant_id_id_key")
+  @@unique([tenantId, key], map: "skills_tenant_id_key_key")
   @@map("skills")
 }
 
@@ -188,11 +138,8 @@ model Enrollment {
   courseVersionId String   @map("course_version_id") @db.Uuid
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  learner       Member        @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  courseVersion CourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, learnerId, courseVersionId])
+  @@unique([tenantId, id], map: "enrollments_tenant_id_id_key")
+  @@unique([tenantId, learnerId, courseVersionId], map: "enrollments_tenant_learner_course_version_key")
   @@map("enrollments")
 }
 
@@ -204,11 +151,8 @@ model LessonProgress {
   state           String
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  learner       Member        @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  lessonVersion LessonVersion @relation(fields: [lessonVersionId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, learnerId, lessonVersionId])
+  @@unique([tenantId, id], map: "lesson_progress_tenant_id_id_key")
+  @@unique([tenantId, learnerId, lessonVersionId], map: "lesson_progress_tenant_learner_lesson_key")
   @@map("lesson_progress")
 }
 
@@ -219,12 +163,8 @@ model PracticeDefinition {
   key             String
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  lesson    LessonVersion      @relation(fields: [lessonVersionId], references: [id], onDelete: Restrict)
-  revisions PracticeRevision[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, lessonVersionId, key])
+  @@unique([tenantId, id], map: "practice_definitions_tenant_id_id_key")
+  @@unique([tenantId, lessonVersionId, key], map: "practice_definitions_tenant_lesson_key_key")
   @@map("practice_definitions")
 }
 
@@ -237,13 +177,8 @@ model PracticeRevision {
   definition     Json
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  practice    PracticeDefinition @relation(fields: [practiceId], references: [id], onDelete: Restrict)
-  skill       Skill              @relation(fields: [skillId], references: [id], onDelete: Restrict)
-  submissions PracticeSubmission[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, practiceId, revisionNumber])
+  @@unique([tenantId, id], map: "practice_revisions_tenant_id_id_key")
+  @@unique([tenantId, practiceId, revisionNumber], map: "practice_revisions_tenant_practice_revision_key")
   @@map("practice_revisions")
 }
 
@@ -257,14 +192,9 @@ model PracticeSubmission {
   artifact           Json
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  learner              Member                @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  practiceRevision     PracticeRevision      @relation(fields: [practiceRevisionId], references: [id], onDelete: Restrict)
-  verificationAttempts VerificationAttempt[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, learnerId, practiceRevisionId, attemptNumber])
-  @@unique([tenantId, learnerId, practiceRevisionId, requestId])
+  @@unique([tenantId, id], map: "practice_submissions_tenant_id_id_key")
+  @@unique([tenantId, learnerId, practiceRevisionId, attemptNumber], map: "practice_submissions_attempt_key")
+  @@unique([tenantId, learnerId, practiceRevisionId, requestId], map: "practice_submissions_request_idempotency_key")
   @@map("practice_submissions")
 }
 
@@ -275,11 +205,8 @@ model ProjectDefinition {
   title     String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  artifacts ProjectArtifact[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, key])
+  @@unique([tenantId, id], map: "project_definitions_tenant_id_id_key")
+  @@unique([tenantId, key], map: "project_definitions_tenant_id_key_key")
   @@map("project_definitions")
 }
 
@@ -290,12 +217,7 @@ model ProjectArtifact {
   projectDefinitionId String   @map("project_definition_id") @db.Uuid
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  learner           Member            @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  projectDefinition ProjectDefinition @relation(fields: [projectDefinitionId], references: [id], onDelete: Restrict)
-  revisions         ArtifactRevision[]
-
-  @@unique([tenantId, id])
+  @@unique([tenantId, id], map: "project_artifacts_tenant_id_id_key")
   @@map("project_artifacts")
 }
 
@@ -309,13 +231,9 @@ model ArtifactRevision {
   sealedAt       DateTime? @map("sealed_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  artifact    ProjectArtifact     @relation(fields: [artifactId], references: [id], onDelete: Restrict)
-  submissions ProjectSubmission[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, artifactId, revisionNumber])
-  @@unique([tenantId, objectKey])
+  @@unique([tenantId, id], map: "artifact_revisions_tenant_id_id_key")
+  @@unique([tenantId, artifactId, revisionNumber], map: "artifact_revisions_tenant_artifact_revision_key")
+  @@unique([tenantId, objectKey], map: "artifact_revisions_tenant_object_key_key")
   @@map("artifact_revisions")
 }
 
@@ -327,13 +245,8 @@ model ProjectSubmission {
   requestId          String   @map("request_id")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  learner              Member                @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  artifactRevision     ArtifactRevision      @relation(fields: [artifactRevisionId], references: [id], onDelete: Restrict)
-  verificationAttempts VerificationAttempt[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, learnerId, artifactRevisionId, requestId])
+  @@unique([tenantId, id], map: "project_submissions_tenant_id_id_key")
+  @@unique([tenantId, learnerId, artifactRevisionId, requestId], map: "project_submissions_request_idempotency_key")
   @@map("project_submissions")
 }
 
@@ -349,32 +262,23 @@ model VerificationAttempt {
   startedAt            DateTime?                 @map("started_at") @db.Timestamptz(6)
   completedAt          DateTime?                 @map("completed_at") @db.Timestamptz(6)
 
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  practiceSubmission PracticeSubmission? @relation(fields: [practiceSubmissionId], references: [id], onDelete: Restrict)
-  projectSubmission  ProjectSubmission?  @relation(fields: [projectSubmissionId], references: [id], onDelete: Restrict)
-  result             VerificationResult?
-
-  @@unique([tenantId, id])
-  @@index([tenantId, status])
+  @@unique([tenantId, id], map: "verification_attempts_tenant_id_id_key")
+  @@index([tenantId, status], map: "verification_attempts_tenant_status_idx")
   @@map("verification_attempts")
 }
 
 model VerificationResult {
   id                    String              @id @db.Uuid
   tenantId              String              @map("tenant_id") @db.Uuid
-  verificationAttemptId String              @unique @map("verification_attempt_id") @db.Uuid
+  verificationAttemptId String              @unique(map: "verification_results_attempt_key") @map("verification_attempt_id") @db.Uuid
   learnerId             String              @map("learner_id") @db.Uuid
   outcome               VerificationOutcome
   diagnostic            Json?
   completedAt           DateTime            @map("completed_at") @db.Timestamptz(6)
   createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  attempt  VerificationAttempt @relation(fields: [verificationAttemptId], references: [id], onDelete: Restrict)
-  evidence SkillEvidence[]
-
-  @@unique([tenantId, id])
-  @@index([tenantId, learnerId, outcome])
+  @@unique([tenantId, id], map: "verification_results_tenant_id_id_key")
+  @@index([tenantId, learnerId, outcome], map: "verification_results_tenant_learner_outcome_idx")
   @@map("verification_results")
 }
 
@@ -387,14 +291,9 @@ model SkillEvidence {
   issuedAt             DateTime @map("issued_at") @db.Timestamptz(6)
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  learner            Member             @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  skill              Skill              @relation(fields: [skillId], references: [id], onDelete: Restrict)
-  verificationResult VerificationResult @relation(fields: [verificationResultId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, verificationResultId, skillId])
-  @@index([tenantId, learnerId, skillId])
+  @@unique([tenantId, id], map: "skill_evidence_tenant_id_id_key")
+  @@unique([tenantId, verificationResultId, skillId], map: "skill_evidence_verification_skill_key")
+  @@index([tenantId, learnerId, skillId], map: "skill_evidence_tenant_learner_skill_idx")
   @@map("skill_evidence")
 }
 
@@ -407,12 +306,8 @@ model CompetencyState {
   evidenceCount Int                        @default(0) @map("evidence_count")
   projectedAt   DateTime                   @map("projected_at") @db.Timestamptz(6)
 
-  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  learner Member @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, learnerId, skillId])
+  @@unique([tenantId, id], map: "competency_states_tenant_id_id_key")
+  @@unique([tenantId, learnerId, skillId], map: "competency_states_tenant_learner_skill_key")
   @@map("competency_states")
 }
 
@@ -426,13 +321,8 @@ model Cohort {
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  memberships CohortMembership[]
-  assignments LearningAssignment[]
-  instructors InstructorCohortRole[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, key])
+  @@unique([tenantId, id], map: "cohorts_tenant_id_id_key")
+  @@unique([tenantId, key], map: "cohorts_tenant_id_key_key")
   @@map("cohorts")
 }
 
@@ -445,12 +335,8 @@ model CohortMembership {
   enrolledAt DateTime         @map("enrolled_at") @db.Timestamptz(6)
   removedAt  DateTime?        @map("removed_at") @db.Timestamptz(6)
 
-  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  cohort  Cohort @relation(fields: [cohortId], references: [id], onDelete: Restrict)
-  learner Member @relation(fields: [learnerId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@index([tenantId, cohortId, learnerId, status])
+  @@unique([tenantId, id], map: "cohort_memberships_tenant_id_id_key")
+  @@index([tenantId, cohortId, learnerId, status], map: "cohort_memberships_tenant_cohort_learner_status_idx")
   @@map("cohort_memberships")
 }
 
@@ -462,12 +348,8 @@ model LearningAssignment {
   isPrimary       Boolean  @default(true) @map("is_primary")
   assignedAt      DateTime @map("assigned_at") @db.Timestamptz(6)
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  cohort        Cohort        @relation(fields: [cohortId], references: [id], onDelete: Restrict)
-  courseVersion CourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@index([tenantId, cohortId, isPrimary])
+  @@unique([tenantId, id], map: "learning_assignments_tenant_id_id_key")
+  @@index([tenantId, cohortId, isPrimary], map: "learning_assignments_tenant_cohort_primary_idx")
   @@map("learning_assignments")
 }
 
@@ -478,12 +360,8 @@ model InstructorCohortRole {
   instructorId String   @map("instructor_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  cohort     Cohort @relation(fields: [cohortId], references: [id], onDelete: Restrict)
-  instructor Member @relation(fields: [instructorId], references: [id], onDelete: Restrict)
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, cohortId, instructorId])
+  @@unique([tenantId, id], map: "instructor_cohort_roles_tenant_id_id_key")
+  @@unique([tenantId, cohortId, instructorId], map: "instructor_cohort_roles_tenant_cohort_instructor_key")
   @@map("instructor_cohort_roles")
 }
 
@@ -498,9 +376,7 @@ model OutboxEvent {
   publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
   attemptCount  Int       @default(0) @map("attempt_count")
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-
-  @@index([publishedAt, occurredAt])
+  @@index([publishedAt, occurredAt], map: "outbox_events_unpublished_idx")
   @@map("outbox_events")
 }
 
@@ -515,8 +391,6 @@ model AuditEvent {
   metadata     Json?
   occurredAt   DateTime @map("occurred_at") @db.Timestamptz(6)
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-
-  @@index([tenantId, occurredAt])
+  @@index([tenantId, occurredAt], map: "audit_events_tenant_occurred_idx")
   @@map("audit_events")
 }
