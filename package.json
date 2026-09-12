@@ -19,6 +19,7 @@
     "auth:schema": "auth generate --config packages/platform/auth/src/better-auth.cli.ts --adapter kysely --output prisma/generated/better-auth.sql --yes"
   },
   "dependencies": {
+    "@skill-platform/contracts": "workspace:*",
     "@nestjs/common": "12.0.1",
     "@nestjs/core": "12.0.1",
     "@nestjs/platform-express": "12.0.1",
