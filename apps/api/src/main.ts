@@ -39,7 +39,7 @@ export async function bootstrap(): Promise<void> {
   const securityAuditSink = new PgSecurityAuditSink(applicationPool);
   server.use("/api/v1", principalMiddleware(sessionRuntime, membershipDirectory, securityAuditSink));
 
-  const app = await NestFactory.create(AppModule.forRoot(applicationPool), new ExpressAdapter(server), { bodyParser: false });
+  const app = await NestFactory.create(AppModule.forRoot(applicationPool, config.ai), new ExpressAdapter(server), { bodyParser: false });
   app.setGlobalPrefix("api/v1");
   app.useGlobalFilters(new ProblemDetailsFilter());
   app.enableShutdownHooks();
