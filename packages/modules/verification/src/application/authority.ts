@@ -52,15 +52,22 @@ export type AuthoritativeVerificationResult = Readonly<{
 }>;
 
 export interface VerificationAuthorityRepository {
-  createOrGetAttempt(request: VerificationAttemptRequest): Promise<Readonly<{ id: string; completed: boolean }>>;
+  createOrGetAttempt(request: VerificationAttemptRequest): Promise<Readonly<{ id: string }>>;
   getResultForAttempt(attemptId: string): Promise<AuthoritativeVerificationResult | null>;
-  markRunning(attemptId: string, startedAt: Date): Promise<void>;
+  claimRunning(attemptId: string, startedAt: Date): Promise<boolean>;
   finalize(input: Readonly<{
     attemptId: string;
     outcome: VerificationOutcome;
     diagnostic: SafeVerifierDiagnostic;
     completedAt: Date;
   }>): Promise<AuthoritativeVerificationResult>;
+}
+
+export class VerificationAttemptInProgressError extends Error {
+  constructor() {
+    super("verification attempt is already running");
+    this.name = "VerificationAttemptInProgressError";
+  }
 }
 
 export class VerificationDispatcherService {
@@ -80,8 +87,12 @@ export class VerificationDispatcherService {
     const existing = await this.repository.getResultForAttempt(attempt.id);
     if (existing) return existing;
 
-    const startedAt = new Date();
-    await this.repository.markRunning(attempt.id, startedAt);
+    const claimed = await this.repository.claimRunning(attempt.id, new Date());
+    if (!claimed) {
+      const racedResult = await this.repository.getResultForAttempt(attempt.id);
+      if (racedResult) return racedResult;
+      throw new VerificationAttemptInProgressError();
+    }
 
     try {
       const result = await this.executor.execute({
