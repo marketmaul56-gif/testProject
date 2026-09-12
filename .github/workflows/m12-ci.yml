@@ -19,8 +19,8 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: '12.4.0'
-      - name: Install locked dependencies
-        run: pnpm install --no-frozen-lockfile
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
       - name: Architecture checks
         run: pnpm run check:architecture
       - name: Static type check
@@ -33,18 +33,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
         run: pnpm run db:validate
-      - name: Upload generated lockfile for controlled recovery
-        uses: actions/upload-artifact@v4
-        with:
-          name: pnpm-lock
-          path: pnpm-lock.yaml
-      - name: Require committed lockfile
-        run: |
-          test -f pnpm-lock.yaml
-          if [ -n "$(git status --porcelain -- pnpm-lock.yaml)" ]; then
-            echo 'pnpm-lock.yaml must be committed before merge.'
-            exit 1
-          fi
 
   migration:
     runs-on: ubuntu-latest
@@ -65,14 +53,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Apply version-controlled migrations
+      - name: Apply all version-controlled migrations in deterministic order
         env:
           PGPASSWORD: postgres
+        shell: bash
         run: |
           set -euo pipefail
-          psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f prisma/migrations/202609120001_initial_core/migration.sql
-          psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f prisma/migrations/202609120002_member_roles/migration.sql
-      - name: Verify authority and authorization constraints exist
+          while IFS= read -r migration; do
+            echo "Applying ${migration}"
+            psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f "${migration}"
+          done < <(find prisma/migrations -mindepth 2 -maxdepth 2 -name migration.sql -print | sort)
+      - name: Verify authority, authorization, auth and audit constraints exist
         env:
           PGPASSWORD: postgres
         run: |
@@ -85,8 +76,20 @@ jobs:
             IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'course_versions_immutable_after_publish') THEN
               RAISE EXCEPTION 'missing course version immutability trigger';
             END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'member_roles') THEN
+            IF to_regclass('public.member_roles') IS NULL THEN
               RAISE EXCEPTION 'missing application authorization roles';
+            END IF;
+            IF to_regclass('public.audit_events') IS NULL THEN
+              RAISE EXCEPTION 'missing audit event store';
+            END IF;
+            IF to_regclass('auth."user"') IS NULL THEN
+              RAISE EXCEPTION 'missing Better Auth user table';
+            END IF;
+            IF to_regclass('auth.session') IS NULL THEN
+              RAISE EXCEPTION 'missing Better Auth session table';
+            END IF;
+            IF to_regclass('auth."twoFactor"') IS NULL THEN
+              RAISE EXCEPTION 'missing Better Auth TOTP table';
             END IF;
           END $$;
           SQL
