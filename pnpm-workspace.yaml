@@ -3,3 +3,8 @@ packages:
   - 'packages/*'
   - 'packages/modules/*'
   - 'packages/platform/*'
+
+# Supply-chain control: only reviewed packages may execute dependency build scripts.
+allowBuilds:
+  '@prisma/engines': true
+  prisma: true
