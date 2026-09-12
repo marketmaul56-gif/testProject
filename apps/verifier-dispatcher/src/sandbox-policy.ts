@@ -35,7 +35,7 @@ export function buildOciConfig(policy: VerifierSandboxPolicy): Record<string, un
     process: {
       terminal: false,
       user: { uid: policy.uid, gid: policy.gid },
-      args: ["/usr/local/bin/verify", "/workspace/submission", "/opt/hidden-tests", "/workspace/result.json"],
+      args: ["/usr/local/bin/verify", "/workspace/submission", "/opt/verification-input", "/workspace/result.json"],
       env: ["LANG=C.UTF-8", "HOME=/tmp"],
       cwd: "/workspace",
       noNewPrivileges: true,
