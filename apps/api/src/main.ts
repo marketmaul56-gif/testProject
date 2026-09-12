@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { metrics, SpanStatusCode, trace } from "@opentelemetry/api";
 import { NestFactory } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import cors from "cors";
@@ -10,16 +11,35 @@ import { createBetterAuth } from "../../../packages/platform/auth/src/better-aut
 import { PgMembershipDirectory } from "../../../packages/platform/auth/src/pg-membership-directory.ts";
 import { createSessionRuntime } from "../../../packages/platform/auth/src/session-runtime.ts";
 import { loadRuntimeConfig } from "../../../packages/platform/config/src/config.ts";
+import { startTelemetry } from "../../../packages/platform/observability/src/telemetry.ts";
 import { AppModule } from "./app.module.ts";
 import { createReadinessHandler } from "./health.ts";
 import { principalMiddleware } from "./principal-middleware.ts";
 import { ProblemDetailsFilter } from "./problem-details.filter.ts";
 
+const apiTracer = trace.getTracer("skill-platform-api");
+const apiMeter = metrics.getMeter("skill-platform-api");
+const requestDuration = apiMeter.createHistogram("http.server.duration.ms", { unit: "ms" });
+
 export async function bootstrap(): Promise<void> {
+  const telemetry = startTelemetry("skill-platform-api");
   const config = loadRuntimeConfig(process.env);
   const server = express();
   const { auth, pool: authPool } = createBetterAuth(config);
   const applicationPool = new Pool({ connectionString: config.databaseUrl });
+
+  server.use((request, response, next) => {
+    const started = performance.now();
+    const span = apiTracer.startSpan("http.server.request", { attributes: { "http.request.method": request.method } });
+    response.once("finish", () => {
+      const durationMs = performance.now() - started;
+      requestDuration.record(durationMs, { "http.request.method": request.method, "http.response.status_code": response.statusCode });
+      span.setAttribute("http.response.status_code", response.statusCode);
+      span.setStatus({ code: response.statusCode >= 500 ? SpanStatusCode.ERROR : SpanStatusCode.OK });
+      span.end();
+    });
+    next();
+  });
 
   server.use(cors({
     origin(origin, callback) {
@@ -45,11 +65,11 @@ export async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new ProblemDetailsFilter());
   app.enableShutdownHooks();
 
-  const closePools = async () => {
-    await Promise.allSettled([applicationPool.end(), authPool.end()]);
+  const closeRuntime = async () => {
+    await Promise.allSettled([applicationPool.end(), authPool.end(), telemetry.shutdown()]);
   };
-  process.once("SIGTERM", () => { void closePools(); });
-  process.once("SIGINT", () => { void closePools(); });
+  process.once("SIGTERM", () => { void closeRuntime(); });
+  process.once("SIGINT", () => { void closeRuntime(); });
 
   await app.listen(config.port);
 }
