@@ -4,7 +4,11 @@ import type { HumanRole, MembershipDirectory, MembershipRecord } from "./princip
 const allowedRoles = new Set<HumanRole>(["LEARNER", "INSTRUCTOR", "PLATFORM_ADMIN"]);
 
 export class PgMembershipDirectory implements MembershipDirectory {
-  constructor(private readonly pool: Pool) {}
+  private readonly pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
 
   async findByAuthUserAndTenant(authUserId: string, tenantId: string): Promise<MembershipRecord | null> {
     const result = await this.pool.query<{ id: string; tenant_id: string; roles: string[] | null }>(
