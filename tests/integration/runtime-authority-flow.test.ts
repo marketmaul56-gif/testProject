@@ -48,7 +48,7 @@ function learnerPrincipal(memberId: string = ids.learner): HumanPrincipal {
     authUserId: `auth-${memberId}`,
     tenantId: ids.tenant,
     memberId,
-    roles: Object.freeze(["LEARNER"]),
+    roles: ["LEARNER"] as const,
   });
 }
 
