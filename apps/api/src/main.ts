@@ -11,6 +11,7 @@ import { PgMembershipDirectory } from "../../../packages/platform/auth/src/pg-me
 import { createSessionRuntime } from "../../../packages/platform/auth/src/session-runtime.ts";
 import { loadRuntimeConfig } from "../../../packages/platform/config/src/config.ts";
 import { AppModule } from "./app.module.ts";
+import { createReadinessHandler } from "./health.ts";
 import { principalMiddleware } from "./principal-middleware.ts";
 import { ProblemDetailsFilter } from "./problem-details.filter.ts";
 
@@ -33,6 +34,7 @@ export async function bootstrap(): Promise<void> {
   server.all("/api/auth/*splat", toNodeHandler(auth));
   server.use(express.json({ limit: "256kb" }));
   server.get("/healthz", (_request, response) => response.status(200).json({ status: "ok" }));
+  server.get("/readyz", createReadinessHandler(applicationPool, authPool));
 
   const sessionRuntime = createSessionRuntime(auth);
   const membershipDirectory = new PgMembershipDirectory(applicationPool);
