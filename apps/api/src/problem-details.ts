@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { ZodError } from "zod";
 import { AuthenticationRequiredError, PlatformAdminMfaRequiredError, TenantMembershipRequiredError } from "../../../packages/platform/auth/src/principal.ts";
 import { AuthorizationDeniedError } from "../../../packages/platform/auth/src/policy.ts";
 
@@ -10,6 +11,7 @@ export type ProblemDetails = Readonly<{
 }>;
 
 export function problemFor(error: unknown): ProblemDetails {
+  if (error instanceof ZodError) return { type: "urn:problem:validation", title: "Invalid request", status: 400, detail: "The request did not satisfy the API contract." };
   if (error instanceof AuthenticationRequiredError) return { type: "urn:problem:authentication-required", title: "Authentication required", status: 401, detail: error.message };
   if (error instanceof TenantMembershipRequiredError) return { type: "urn:problem:tenant-access-denied", title: "Tenant access denied", status: 403, detail: error.message };
   if (error instanceof PlatformAdminMfaRequiredError) return { type: "urn:problem:admin-mfa-required", title: "Administrator MFA required", status: 403, detail: error.message };
