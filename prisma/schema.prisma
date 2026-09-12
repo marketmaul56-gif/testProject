@@ -195,6 +195,7 @@ model PracticeSubmission {
   @@unique([tenantId, id], map: "practice_submissions_tenant_id_id_key")
   @@unique([tenantId, learnerId, practiceRevisionId, attemptNumber], map: "practice_submissions_attempt_key")
   @@unique([tenantId, learnerId, practiceRevisionId, requestId], map: "practice_submissions_request_idempotency_key")
+  @@unique([tenantId, learnerId, requestId], map: "practice_submissions_tenant_learner_request_key")
   @@map("practice_submissions")
 }
 
@@ -260,7 +261,24 @@ model ProjectSubmission {
 
   @@unique([tenantId, id], map: "project_submissions_tenant_id_id_key")
   @@unique([tenantId, learnerId, artifactRevisionId, requestId], map: "project_submissions_request_idempotency_key")
+  @@unique([tenantId, learnerId, requestId], map: "project_submissions_tenant_learner_request_key")
   @@map("project_submissions")
+}
+
+model VerificationProfile {
+  id                  String   @id @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  targetType          String   @map("target_type")
+  targetId            String   @map("target_id") @db.Uuid
+  verifierKey         String   @map("verifier_key")
+  verifierVersion     String   @map("verifier_version")
+  hiddenTestBundleRef String   @map("hidden_test_bundle_ref")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "verification_profiles_tenant_id_id_key")
+  @@unique([tenantId, targetType, targetId], map: "verification_profiles_tenant_id_target_type_target_id_key")
+  @@index([tenantId, targetType, targetId], map: "verification_profiles_tenant_target_idx")
+  @@map("verification_profiles")
 }
 
 model VerificationAttempt {
@@ -392,6 +410,8 @@ model OutboxEvent {
   attemptCount  Int       @default(0) @map("attempt_count")
 
   @@index([publishedAt, occurredAt], map: "outbox_events_unpublished_idx")
+  @@index([eventType, publishedAt, attemptCount, occurredAt], map: "outbox_runtime_delivery_idx")
+  // Partial unique outbox_verification_requested_once_idx is enforced in SQL migration.
   @@map("outbox_events")
 }
 
