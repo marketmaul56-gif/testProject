@@ -1,6 +1,6 @@
 # Change Review — M12.9 Production Canonical Runtime Wiring
 
-Status: **PENDING EXPLICIT APPROVAL**
+Status: **ACCEPTED — BOUNDED IMPLEMENTATION REOPENING AUTHORIZED**
 
 Date: 2026-09-12
 
@@ -14,7 +14,7 @@ Therefore an RC would risk passing tests while leaving the core authoritative le
 
 ## Affected LOCKED decision
 
-This review requests a **narrow implementation reopening only**, not a product/domain redesign.
+This review authorizes a **narrow implementation reopening only**, not a product/domain redesign.
 
 Affected implementation baselines:
 
@@ -61,9 +61,9 @@ Safe but not useful. It preserves LOCK mechanically while preventing a productio
 
 ### Alternative C — Narrowly reopen implementation wiring and preserve every locked semantic
 
-Recommended.
+**Accepted.**
 
-Scope of the amendment:
+Authorized scope:
 
 1. add learner-owned practice/project submission command endpoints with server-side tenant/object authorization and idempotency;
 2. enqueue/dispatch verification through the existing authoritative verification service rather than creating a second verifier/evidence engine;
@@ -123,7 +123,7 @@ Existing read APIs, instructor workflows, evidence records, competency projectio
 
 ## Acceptance criteria after approval
 
-The narrow reopening is considered complete only if:
+The bounded reopening is complete only if:
 
 - a learner can submit an authorized practice/project request through the production API boundary;
 - duplicate request IDs do not duplicate submission/verification/evidence;
@@ -143,10 +143,14 @@ The narrow reopening is considered complete only if:
 ## Decision
 
 - [ ] REJECT — keep prior LOCKED implementation unchanged and M12.9 release-blocked
-- [ ] ACCEPT — permit the bounded runtime-wiring amendment above
+- [x] ACCEPT — permit the bounded runtime-wiring amendment above
 
-Current decision: **PENDING EXPLICIT USER APPROVAL**.
+Current decision: **ACCEPTED**.
 
 ## Approval evidence
 
-Pending an explicit user statement accepting or rejecting this Change Review.
+Explicit user approval received in project chat on 2026-09-13:
+
+`ACCEPT Change Review M12.9 Runtime Wiring`
+
+This approval authorizes only the bounded implementation wiring described above and does not authorize changes to the locked authority model or product scope.
