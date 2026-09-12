@@ -9,16 +9,35 @@
   },
   "scripts": {
     "check:architecture": "node scripts/check-architecture.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:domain": "node --test tests/unit/*.test.ts",
-    "test": "pnpm run test:domain",
-    "check": "pnpm run check:architecture && pnpm run test:domain",
+    "test:security": "node --test tests/security/*.test.ts",
+    "test": "pnpm run test:domain && pnpm run test:security",
+    "check": "pnpm run check:architecture && pnpm run typecheck && pnpm run test",
     "db:validate": "prisma validate",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "auth:schema": "auth generate --config packages/platform/auth/src/better-auth.ts --adapter kysely --output prisma/generated/better-auth.sql --yes"
   },
   "dependencies": {
-    "@prisma/client": "7.10.0"
+    "@nestjs/common": "12.0.1",
+    "@nestjs/core": "12.0.1",
+    "@nestjs/platform-express": "12.0.1",
+    "@prisma/client": "7.10.0",
+    "better-auth": "1.7.4",
+    "cors": "2.8.6",
+    "express": "5.2.1",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.6.2"
   },
   "devDependencies": {
-    "prisma": "7.10.0"
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.4",
+    "@types/pg": "8.23.1",
+    "auth": "1.7.4",
+    "prisma": "7.10.0",
+    "typescript": "7.0.2"
   }
 }
