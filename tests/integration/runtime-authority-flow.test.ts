@@ -42,7 +42,7 @@ const ids = {
 
 const token = "runtime-test-dispatcher-token-0000000000000001";
 
-function learnerRequest(memberId = ids.learner): PrincipalRequest {
+function learnerRequest(memberId: string = ids.learner): PrincipalRequest {
   return {
     principal: {
       kind: "human",
