@@ -12,6 +12,7 @@ import { createSessionRuntime } from "../../../packages/platform/auth/src/sessio
 import { loadRuntimeConfig } from "../../../packages/platform/config/src/config.ts";
 import { AppModule } from "./app.module.ts";
 import { principalMiddleware } from "./principal-middleware.ts";
+import { ProblemDetailsFilter } from "./problem-details.filter.ts";
 
 export async function bootstrap(): Promise<void> {
   const config = loadRuntimeConfig(process.env);
@@ -38,8 +39,9 @@ export async function bootstrap(): Promise<void> {
   const securityAuditSink = new PgSecurityAuditSink(applicationPool);
   server.use("/api/v1", principalMiddleware(sessionRuntime, membershipDirectory, securityAuditSink));
 
-  const app = await NestFactory.create(AppModule, new ExpressAdapter(server), { bodyParser: false });
+  const app = await NestFactory.create(AppModule.forRoot(applicationPool), new ExpressAdapter(server), { bodyParser: false });
   app.setGlobalPrefix("api/v1");
+  app.useGlobalFilters(new ProblemDetailsFilter());
   app.enableShutdownHooks();
 
   const closePools = async () => {
