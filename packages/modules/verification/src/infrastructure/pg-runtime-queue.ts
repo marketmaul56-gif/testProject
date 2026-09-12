@@ -35,14 +35,19 @@ export class PgRuntimeVerificationQueue {
         LIMIT $2`,
       [this.maxAttempts, limit],
     );
-    return Object.freeze(result.rows.map((row: Record<string, unknown>) => Object.freeze({
-      eventId: String(row.id),
-      tenantId: String(row.tenant_id),
-      aggregateType: row.aggregate_type as RuntimeVerificationEvent["aggregateType"],
-      submissionId: String(row.aggregate_id),
-      occurredAt: new Date(String(row.occurred_at)),
-      attemptCount: Number(row.attempt_count),
-    })));
+    return Object.freeze(result.rows.map((row: Record<string, unknown>) => this.mapVerificationEvent(row)));
+  }
+
+  async getVerificationRequest(eventId: string): Promise<RuntimeVerificationEvent | null> {
+    const result = await this.pool.query(
+      `SELECT id, tenant_id, aggregate_type, aggregate_id, occurred_at, attempt_count
+         FROM outbox_events
+        WHERE id=$2::uuid AND published_at IS NULL AND event_type='verification.requested'
+          AND attempt_count < $1`,
+      [this.maxAttempts, eventId],
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? this.mapVerificationEvent(row) : null;
   }
 
   async prepare(event: RuntimeVerificationEvent): Promise<PreparedRuntimeVerification> {
@@ -78,6 +83,17 @@ export class PgRuntimeVerificationQueue {
         WHERE id=$1::uuid AND published_at IS NULL`,
       [eventId],
     );
+  }
+
+  private mapVerificationEvent(row: Record<string, unknown>): RuntimeVerificationEvent {
+    return Object.freeze({
+      eventId: String(row.id),
+      tenantId: String(row.tenant_id),
+      aggregateType: row.aggregate_type as RuntimeVerificationEvent["aggregateType"],
+      submissionId: String(row.aggregate_id),
+      occurredAt: new Date(String(row.occurred_at)),
+      attemptCount: Number(row.attempt_count),
+    });
   }
 
   private async preparePractice(event: RuntimeVerificationEvent): Promise<PreparedRuntimeVerification> {
