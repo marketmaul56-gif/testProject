@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { Pool } from "pg";
-import { LearnerSubmissionController } from "../../apps/api/src/submissions.controller.ts";
+import { LearnerSubmissionApplication } from "../../apps/api/src/learner-submission-application.ts";
 import { AuthorityWorker } from "../../apps/worker/src/authority-worker.ts";
 import { HttpVerifierExecutor } from "../../apps/worker/src/http-verifier-executor.ts";
 import { createVerifierDispatcherServer } from "../../apps/verifier-dispatcher/src/server.ts";
@@ -12,8 +12,8 @@ import { PgProjectSubmissionCommands } from "../../packages/modules/projects/src
 import { VerificationDispatcherService, type VerifierExecutor } from "../../packages/modules/verification/src/application/authority.ts";
 import { PgVerificationAuthority } from "../../packages/modules/verification/src/infrastructure/pg-authority.ts";
 import { PgRuntimeVerificationQueue } from "../../packages/modules/verification/src/infrastructure/pg-runtime-queue.ts";
+import type { HumanPrincipal } from "../../packages/platform/auth/src/principal.ts";
 import { AuthorizationDeniedError } from "../../packages/platform/auth/src/policy.ts";
-import type { PrincipalRequest } from "../../apps/api/src/principal-middleware.ts";
 
 const ids = {
   tenant: "00000000-0000-7000-8000-000000000501",
@@ -42,16 +42,14 @@ const ids = {
 
 const token = "runtime-test-dispatcher-token-0000000000000001";
 
-function learnerRequest(memberId: string = ids.learner): PrincipalRequest {
-  return {
-    principal: {
-      kind: "human",
-      authUserId: `auth-${memberId}`,
-      tenantId: ids.tenant,
-      memberId,
-      roles: ["LEARNER"],
-    },
-  } as unknown as PrincipalRequest;
+function learnerPrincipal(memberId: string = ids.learner): HumanPrincipal {
+  return Object.freeze({
+    kind: "human",
+    authUserId: `auth-${memberId}`,
+    tenantId: ids.tenant,
+    memberId,
+    roles: Object.freeze(["LEARNER"]),
+  });
 }
 
 const fakeSandboxExecutor: VerifierExecutor = {
@@ -140,13 +138,13 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
     const executor = new HttpVerifierExecutor(`http://127.0.0.1:${address.port}`, token, 5_000);
     const verification = new VerificationDispatcherService(new PgVerificationAuthority(pool), executor);
     const queue = new PgRuntimeVerificationQueue(pool);
-    const controller = new LearnerSubmissionController(
+    const application = new LearnerSubmissionApplication(
       new PgPracticeSubmissionCommands(pool),
       new PgProjectSubmissionCommands(pool),
     );
     const realWorker = new AuthorityWorker(queue, verification, new PgCompetencyAuthority(pool));
 
-    const practice = await controller.submitPractice(learnerRequest(), {
+    const practice = await application.submitPractice(learnerPrincipal(), {
       practiceRevisionId: ids.practicePass,
       requestId: "runtime-practice-request-0001",
       artifact: { source: "export const answer = 42" },
@@ -155,7 +153,7 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
     assert.equal(practice.idempotent, false);
     assert.equal(JSON.stringify(practice).includes("hidden"), false);
 
-    const duplicate = await controller.submitPractice(learnerRequest(), {
+    const duplicate = await application.submitPractice(learnerPrincipal(), {
       practiceRevisionId: ids.practicePass,
       requestId: "runtime-practice-request-0001",
       artifact: { source: "export const answer = 42" },
@@ -181,7 +179,7 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
     assert.deepEqual(replay, { verificationProcessed: 0, verificationErrors: 0, evidenceProcessed: 0, deliveryFailures: 0 });
     assert.equal((await counts(pool)).evidence, 1);
 
-    const project = await controller.submitProject(learnerRequest(), {
+    const project = await application.submitProject(learnerPrincipal(), {
       artifactRevisionId: ids.artifactRevision,
       requestId: "runtime-project-request-0001",
     });
@@ -194,7 +192,7 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
     assert.equal((await counts(pool)).evidence, 2);
 
     await assert.rejects(
-      () => controller.submitPractice(learnerRequest(ids.otherLearner), {
+      () => application.submitPractice(learnerPrincipal(ids.otherLearner), {
         practiceRevisionId: ids.practicePass,
         requestId: "runtime-unauthorized-request",
         artifact: { source: "stolen attempt" },
@@ -202,7 +200,7 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
       AuthorizationDeniedError,
     );
 
-    const failedInfrastructure = await controller.submitPractice(learnerRequest(), {
+    const failedInfrastructure = await application.submitPractice(learnerPrincipal(), {
       practiceRevisionId: ids.practiceError,
       requestId: "runtime-error-request-0001",
       artifact: { source: "valid learner attempt" },
@@ -220,7 +218,7 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
     assert.equal(errorResult.rows[0]?.outcome, "ERROR");
     assert.equal((await counts(pool)).evidence, 2);
 
-    const retryable = await controller.submitPractice(learnerRequest(), {
+    const retryable = await application.submitPractice(learnerPrincipal(), {
       practiceRevisionId: ids.practiceRetry,
       requestId: "runtime-evidence-retry-0001",
       artifact: { source: "retryable evidence path" },
@@ -260,7 +258,9 @@ test("production command -> worker -> dispatcher -> evidence runtime is idempote
     );
     assert.equal(verificationRequests.rowCount, 0);
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
     await pool.end();
   }
 });
