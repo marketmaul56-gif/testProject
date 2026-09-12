@@ -1,0 +1,22 @@
+name: Bootstrap Integrity
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate-bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate mandatory governance artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f README.md
+          test -f docs/locked/M12-implementation-release-contract.md
+          test -f docs/locked/M3-M4-RECOVERY-TEMPLATE.md
+          test -f docs/traceability/M12-TRACEABILITY.md
+          test -f docs/release/AUTHORITY-REGRESSION.md
+          test -f docs/release/PRODUCTION-GATE.md
+          echo "Bootstrap governance artifacts are present."
