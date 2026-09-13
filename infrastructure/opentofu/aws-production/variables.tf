@@ -114,6 +114,30 @@ variable "runsc_sha512" {
   }
 }
 
+variable "github_oidc_thumbprints" {
+  type        = list(string)
+  description = "Current SHA-1 root CA thumbprints accepted by AWS IAM for token.actions.githubusercontent.com. Verify from the live certificate chain before production apply."
+
+  validation {
+    condition = (
+      length(var.github_oidc_thumbprints) > 0 &&
+      alltrue([for thumbprint in var.github_oidc_thumbprints : can(regex("^[a-fA-F0-9]{40}$", thumbprint))])
+    )
+    error_message = "At least one 40-character hexadecimal GitHub OIDC root CA SHA-1 thumbprint is required."
+  }
+}
+
+variable "github_oidc_subject" {
+  type        = string
+  default     = "repo:marketmaul56-gif@326277591/testProject@1360769907:ref:refs/heads/main"
+  description = "Immutable GitHub OIDC subject for this production repository/main branch."
+
+  validation {
+    condition     = var.github_oidc_subject == "repo:marketmaul56-gif@326277591/testProject@1360769907:ref:refs/heads/main"
+    error_message = "Production release federation is locked to the immutable main-branch subject of marketmaul56-gif/testProject."
+  }
+}
+
 variable "offline_validation" {
   type        = bool
   default     = false
