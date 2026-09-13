@@ -1,0 +1,58 @@
+name: PR.6 Stabilization & Operational Handoff Gate
+
+on:
+  push:
+    branches: [main, 'production/pr6-**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  stabilization-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify prerequisite release-control lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'PR.5 — Go-Live Gate 🔒 LOCKED' docs/production/PR5-GO-LIVE-GATE.md
+      - name: Evaluate stabilization policy
+        run: node scripts/evaluate-stabilization.mjs
+      - name: Run synthetic incident decision rehearsal
+        run: node scripts/evaluate-stabilization.mjs --self-test
+      - name: Regress dependency and failure semantics
+        run: pnpm test:failure
+      - name: Regress security authority boundaries
+        run: pnpm test:security
+      - name: Regress performance baseline
+        run: pnpm test:performance
+      - name: Verify operations and recovery runbooks exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s docs/operations/PRODUCTION-RUNBOOK.md
+          grep -q 'P0' docs/operations/PRODUCTION-RUNBOOK.md
+          test -s scripts/rehearse-gvisor.sh
+          test -s scripts/apply-migrations.sh
+      - name: Preserve deferred live-observation state
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const stabilization = require('./infrastructure/deployment/stabilization-policy.json');
+          const goLive = require('./infrastructure/deployment/go-live-gate.json');
+          if (stabilization.liveObservation !== 'DEFERRED') process.exit(1);
+          if (stabilization.principles.publicTrafficObserved !== false) process.exit(1);
+          if (goLive.publicTraffic !== 'DEFERRED') process.exit(1);
+          if (goLive.liveProviderExecution !== 'DEFERRED') process.exit(1);
+          NODE
