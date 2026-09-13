@@ -1,0 +1,203 @@
+name: PR.3 Release Package Gate
+
+on:
+  push:
+    branches: [main, 'production/pr3-*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  release-package:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - name: Verify exact source binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${RELEASE_SOURCE_SHA}"
+          test "${#RELEASE_SOURCE_SHA}" = "40"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Apply canonical migration set
+        run: >-
+          docker run --rm --network host
+          -v "$PWD:/workspace" -w /workspace
+          -e DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/skill_platform
+          postgres:18 bash scripts/apply-migrations.sh
+
+      - name: Verify guarded platform-admin bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat <<'SQL' | docker run --rm -i --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d skill_platform -v ON_ERROR_STOP=1
+          INSERT INTO auth."user" (id, name, email, "emailVerified", "createdAt", "updatedAt", "twoFactorEnabled")
+          VALUES ('ci-bootstrap-user', 'CI Bootstrap Admin', 'bootstrap@example.invalid', true, now(), now(), true);
+          INSERT INTO auth."twoFactor" (id, secret, "backupCodes", "userId", verified, "failedVerificationCount")
+          VALUES ('ci-bootstrap-2fa', 'ci-secret-not-real', '[]', 'ci-bootstrap-user', true, 0);
+          INSERT INTO auth."user" (id, name, email, "emailVerified", "createdAt", "updatedAt", "twoFactorEnabled")
+          VALUES ('ci-no-2fa-user', 'CI No 2FA', 'no2fa@example.invalid', true, now(), now(), false);
+          SQL
+
+          common=(
+            --rm --network host -v "$PWD:/workspace" -w /workspace
+            -e DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/skill_platform
+            -e BOOTSTRAP_TENANT_ID=01994a7d-1000-7000-8000-000000000001
+            -e BOOTSTRAP_TENANT_SLUG=ci-release
+          )
+          docker run "${common[@]}" \
+            -e BOOTSTRAP_MEMBER_ID=01994a7d-1000-7000-8000-000000000002 \
+            -e BOOTSTRAP_AUTH_USER_ID=ci-bootstrap-user \
+            -e 'BOOTSTRAP_DISPLAY_NAME=CI Bootstrap Admin' \
+            -e BOOTSTRAP_AUDIT_EVENT_ID=01994a7d-1000-7000-8000-000000000003 \
+            postgres:18 bash scripts/bootstrap-platform-admin.sh
+
+          # Idempotent retry must not duplicate role or audit event.
+          docker run "${common[@]}" \
+            -e BOOTSTRAP_MEMBER_ID=01994a7d-1000-7000-8000-000000000002 \
+            -e BOOTSTRAP_AUTH_USER_ID=ci-bootstrap-user \
+            -e 'BOOTSTRAP_DISPLAY_NAME=CI Bootstrap Admin' \
+            -e BOOTSTRAP_AUDIT_EVENT_ID=01994a7d-1000-7000-8000-000000000003 \
+            postgres:18 bash scripts/bootstrap-platform-admin.sh
+
+          role_count=$(docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d skill_platform -Atc \
+            "SELECT count(*) FROM member_roles WHERE tenant_id='01994a7d-1000-7000-8000-000000000001' AND member_id='01994a7d-1000-7000-8000-000000000002' AND role='PLATFORM_ADMIN';")
+          audit_count=$(docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d skill_platform -Atc \
+            "SELECT count(*) FROM audit_events WHERE action='bootstrap.platform_admin.granted' AND resource_id='01994a7d-1000-7000-8000-000000000002';")
+          test "$role_count" = "1"
+          test "$audit_count" = "1"
+
+          if docker run "${common[@]}" \
+            -e BOOTSTRAP_MEMBER_ID=01994a7d-1000-7000-8000-000000000004 \
+            -e BOOTSTRAP_AUTH_USER_ID=ci-no-2fa-user \
+            -e 'BOOTSTRAP_DISPLAY_NAME=CI No 2FA' \
+            -e BOOTSTRAP_AUDIT_EVENT_ID=01994a7d-1000-7000-8000-000000000005 \
+            postgres:18 bash scripts/bootstrap-platform-admin.sh; then
+            echo "bootstrap unexpectedly accepted a user without verified TOTP" >&2
+            exit 1
+          fi
+
+      - name: Build release service images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --file infrastructure/deployment/Dockerfile.api --tag skill-platform-api:${RELEASE_SOURCE_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.web --tag skill-platform-web:${RELEASE_SOURCE_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.worker --tag skill-platform-worker:${RELEASE_SOURCE_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.verifier-dispatcher --tag skill-platform-verifier-dispatcher:${RELEASE_SOURCE_SHA} .
+
+      - name: Package immutable release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          docker save \
+            skill-platform-api:${RELEASE_SOURCE_SHA} \
+            skill-platform-web:${RELEASE_SOURCE_SHA} \
+            skill-platform-worker:${RELEASE_SOURCE_SHA} \
+            skill-platform-verifier-dispatcher:${RELEASE_SOURCE_SHA} \
+            | gzip -n > release/images.tar.gz
+
+          epoch=$(git show -s --format=%ct "${RELEASE_SOURCE_SHA}")
+          tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner \
+            -cf - prisma/migrations prisma/schema.prisma scripts/apply-migrations.sh \
+            | gzip -n > release/migrations.tar.gz
+          cp infrastructure/deployment/production-runtime-contract.json release/production-runtime-contract.json
+
+      - name: Generate and verify release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_SHA=${RELEASE_SOURCE_SHA} node scripts/generate-release-manifest.mjs
+          node scripts/verify-release-manifest.mjs
+
+      - name: Verify image bundle can be restored without identity drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image rm -f \
+            skill-platform-api:${RELEASE_SOURCE_SHA} \
+            skill-platform-web:${RELEASE_SOURCE_SHA} \
+            skill-platform-worker:${RELEASE_SOURCE_SHA} \
+            skill-platform-verifier-dispatcher:${RELEASE_SOURCE_SHA}
+          gzip -dc release/images.tar.gz | docker load
+          node scripts/verify-release-manifest.mjs
+
+      - name: Replay packaged migrations into a clean database
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE skill_platform_replay;'
+          rm -rf /tmp/pr3-replay
+          mkdir -p /tmp/pr3-replay
+          tar -xzf release/migrations.tar.gz -C /tmp/pr3-replay
+          docker run --rm --network host \
+            -v /tmp/pr3-replay:/workspace -w /workspace \
+            -e DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/skill_platform_replay \
+            postgres:18 bash scripts/apply-migrations.sh
+          tables=$(docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d skill_platform_replay -Atc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema IN ('public','auth') AND table_type='BASE TABLE';")
+          test "$tables" -gt 10
+
+      - name: Validate runtime contract contains no secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const contract = JSON.parse(fs.readFileSync('infrastructure/deployment/production-runtime-contract.json', 'utf8'));
+          if (contract.schemaVersion !== 1) throw new Error('runtime contract schema mismatch');
+          for (const [service, spec] of Object.entries(contract.services)) {
+            if (!Array.isArray(spec.required) || !Array.isArray(spec.sensitive)) throw new Error(`invalid service contract: ${service}`);
+            const duplicates = spec.required.filter((value, index, all) => all.indexOf(value) !== index);
+            if (duplicates.length) throw new Error(`duplicate required keys for ${service}: ${duplicates.join(',')}`);
+          }
+          const serialized = JSON.stringify(contract);
+          for (const forbidden of ['postgresql://', 'redis://', 'sk-', 'BEGIN PRIVATE KEY']) {
+            if (serialized.includes(forbidden)) throw new Error(`runtime contract contains a forbidden secret-like value: ${forbidden}`);
+          }
+          console.log(JSON.stringify({ verified: true, services: Object.keys(contract.services) }));
+          NODE
+
+      - name: Upload provider-neutral release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr3-release-package-${{ env.RELEASE_SOURCE_SHA }}
+          path: |
+            release/release-manifest.json
+            release/images.tar.gz
+            release/migrations.tar.gz
+            release/production-runtime-contract.json
+          if-no-files-found: error
+          retention-days: 3

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Provider-neutral production runtime configuration contract. Contains names and rules only; never secret values.",
+  "services": {
+    "web": {
+      "required": ["NODE_ENV", "PORT", "INTERNAL_API_BASE_URL"],
+      "sensitive": [],
+      "notes": ["INTERNAL_API_BASE_URL is server-only and must never be exposed as NEXT_PUBLIC_*."]
+    },
+    "api": {
+      "required": [
+        "NODE_ENV",
+        "PORT",
+        "DATABASE_URL",
+        "AUTH_DATABASE_URL",
+        "BETTER_AUTH_URL",
+        "BETTER_AUTH_SECRET",
+        "TRUSTED_ORIGINS",
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_REGION",
+        "OBJECT_STORAGE_BUCKET",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE"
+      ],
+      "optionalPairs": [
+        ["OBJECT_STORAGE_ACCESS_KEY_ID", "OBJECT_STORAGE_SECRET_ACCESS_KEY"],
+        ["OPENAI_API_KEY", "OPENAI_MODEL"]
+      ],
+      "sensitive": [
+        "DATABASE_URL",
+        "AUTH_DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "OBJECT_STORAGE_ACCESS_KEY_ID",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+        "OPENAI_API_KEY"
+      ],
+      "notes": [
+        "AI configuration is optional and cannot become PASS/FAIL or competence authority.",
+        "S3-compatible storage is required when NODE_ENV=production."
+      ]
+    },
+    "worker": {
+      "required": [
+        "NODE_ENV",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "VERIFIER_DISPATCHER_URL",
+        "VERIFIER_DISPATCHER_TOKEN"
+      ],
+      "sensitive": ["DATABASE_URL", "REDIS_URL", "VERIFIER_DISPATCHER_TOKEN"],
+      "notes": [
+        "PostgreSQL outbox remains authority; Redis/BullMQ is transport only.",
+        "At-least-once delivery is expected and consumers must remain idempotent."
+      ]
+    },
+    "verifier-dispatcher": {
+      "required": [
+        "NODE_ENV",
+        "PORT",
+        "VERIFIER_DISPATCHER_TOKEN",
+        "VERIFIER_RUNTIME_IMAGE_DIGEST",
+        "VERIFIER_ROOTFS_DIR",
+        "VERIFIER_HIDDEN_BUNDLES_ROOT",
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_REGION",
+        "OBJECT_STORAGE_BUCKET",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE"
+      ],
+      "optionalPairs": [
+        ["OBJECT_STORAGE_ACCESS_KEY_ID", "OBJECT_STORAGE_SECRET_ACCESS_KEY"]
+      ],
+      "sensitive": [
+        "VERIFIER_DISPATCHER_TOKEN",
+        "OBJECT_STORAGE_ACCESS_KEY_ID",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY"
+      ],
+      "notes": [
+        "Trusted dispatcher may hold object-storage read credentials; learner sandbox receives none.",
+        "VERIFIER_RUNTIME_IMAGE_DIGEST must be an immutable sha256 digest.",
+        "Production hostile execution still requires the locked runsc/gVisor boundary."
+      ]
+    }
+  },
+  "globalInvariants": [
+    "No default or committed production secret values.",
+    "Completion is not competence; runtime configuration cannot bypass the canonical evidence chain.",
+    "AI Coach remains formative and optional.",
+    "System/verifier infrastructure errors are not learner FAIL outcomes.",
+    "Live provider binding and secret injection are deployment-execution concerns and remain DEFERRED while AWS execution is skipped."
+  ]
+}
