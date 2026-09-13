@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec > >(tee /var/log/skill-platform-verifier-bootstrap.log | logger -t verifier-bootstrap -s 2>/dev/console) 2>&1
+
+dnf install -y docker curl jq
+systemctl enable --now docker
+
+curl --fail --show-error --location '${runsc_download_url}' --output /usr/local/bin/runsc
+echo '${runsc_sha512}  /usr/local/bin/runsc' | sha512sum --check --strict
+chmod 0755 /usr/local/bin/runsc
+
+cat >/etc/docker/daemon.json <<'JSON'
+{
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc"
+    }
+  }
+}
+JSON
+
+systemctl restart docker
+
+docker info --format '{{json .Runtimes}}' | grep -q 'runsc'
+/usr/local/bin/runsc --version
+
+install -d -m 0700 /opt/skill-platform/verifier
+install -d -m 0700 /opt/skill-platform/verifier/rootfs
+install -d -m 0700 /opt/skill-platform/verifier/hidden
+install -d -m 0700 /opt/skill-platform/verifier/artifacts
+
+cat >/etc/skill-platform-verifier-host <<'EOF'
+VERIFIER_HOST_READY=1
+LEARNER_NETWORK_DEFAULT=DENY
+EOF
+chmod 0600 /etc/skill-platform-verifier-host

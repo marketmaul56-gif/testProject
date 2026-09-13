@@ -10,6 +10,17 @@
 *.pem
 *.key
 
+# OpenTofu/Terraform local state and apply-time inputs
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+**/production.tfvars
+**/*.auto.tfvars
+# Keep checked-in non-secret fixtures/examples such as ci.tfvars and *.tfvars.example.
+
 # common build/runtime outputs
 node_modules/
 dist/
