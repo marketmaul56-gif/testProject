@@ -14,6 +14,10 @@ p { line-height: 1.55; }
 .card { background: #fff; border: 1px solid #dedfdc; border-radius: 12px; padding: 18px; }
 .stack { display: grid; gap: 12px; }
 .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.learning-item, .practice-block, .project-block { display: grid; gap: 10px; }
+.practice-block, .project-block { padding: 12px 0; border-top: 1px solid #ecece9; }
+.submission-form { padding: 12px; border: 1px solid #e0e1dd; border-radius: 10px; background: #fafaf8; }
+.submission-form label { font-weight: 700; }
 .pill { display: inline-flex; align-items: center; border: 1px solid #cfd1cc; border-radius: 999px; padding: 4px 9px; font-size: .78rem; font-weight: 700; background: #fafafa; }
 .pill[data-state="PASSED"], .pill[data-state="EVIDENCED"] { border-color: #8eb79b; background: #f0f8f2; }
 .pill[data-state="FAILED"] { border-color: #d6a1a1; background: #fff4f4; }
@@ -22,6 +26,8 @@ p { line-height: 1.55; }
 table { width: 100%; border-collapse: collapse; background: #fff; }
 th, td { text-align: left; border-bottom: 1px solid #e5e6e2; padding: 12px; vertical-align: top; }
 button { border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 700; cursor: pointer; }
-textarea { width: 100%; min-height: 100px; padding: 10px; border: 1px solid #cfd1cc; border-radius: 8px; font: inherit; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+textarea, input[type="file"] { width: 100%; padding: 10px; border: 1px solid #cfd1cc; border-radius: 8px; font: inherit; background: #fff; }
+textarea { min-height: 100px; resize: vertical; }
 form { display: grid; gap: 10px; }
 @media (max-width: 640px) { main { padding-top: 24px; } table { font-size: .9rem; } }
