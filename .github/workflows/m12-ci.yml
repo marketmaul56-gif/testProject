@@ -1,0 +1,290 @@
+name: M12 CI
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  domain-architecture-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Architecture checks
+        run: pnpm run check:architecture
+      - name: Static type check
+        run: pnpm run typecheck
+      - name: Production worker and verifier-dispatcher builds
+        run: pnpm run build:worker && pnpm run build:verifier-dispatcher
+      - name: Domain invariant tests
+        run: pnpm run test:domain
+      - name: Negative authorization and input-security tests
+        run: pnpm run test:security
+      - name: Contract tests
+        run: pnpm run test:contract
+      - name: Prisma schema validation
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: pnpm run db:validate
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Web type check
+        run: pnpm --filter @skill-platform/web typecheck
+      - name: Next.js production build
+        env:
+          API_BASE_URL: http://127.0.0.1:3001
+        run: pnpm --filter @skill-platform/web build
+
+  migration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply all version-controlled migrations in deterministic order
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r migration; do
+            echo "Applying ${migration}"
+            psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 -f "${migration}"
+          done < <(find prisma/migrations -mindepth 2 -maxdepth 2 -name migration.sql -print | sort)
+      - name: Verify authority, authorization, runtime, cohort, auth and audit constraints exist
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d skill_platform -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'skill_evidence_requires_pass') THEN RAISE EXCEPTION 'missing skill_evidence_requires_pass trigger'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'verification_result_provenance_guard') THEN RAISE EXCEPTION 'missing verification provenance guard'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'competency_projection_integrity_guard') THEN RAISE EXCEPTION 'missing competency projection integrity guard'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'verification_attempts_tenant_request_id_key') THEN RAISE EXCEPTION 'missing verification retry idempotency index'; END IF;
+            IF to_regclass('public.project_skill_alignments') IS NULL THEN RAISE EXCEPTION 'missing project skill alignment authority table'; END IF;
+            IF to_regclass('public.verification_profiles') IS NULL THEN RAISE EXCEPTION 'missing runtime verification profile table'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'verification_profiles_append_only') THEN RAISE EXCEPTION 'missing immutable verification profile trigger'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'outbox_verification_requested_once_idx') THEN RAISE EXCEPTION 'missing one-verification-request-per-submission index'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'practice_submissions_tenant_learner_request_key') THEN RAISE EXCEPTION 'missing practice API idempotency index'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'project_submissions_tenant_learner_request_key') THEN RAISE EXCEPTION 'missing project API idempotency index'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'cohorts_lifecycle_contract_guard') THEN RAISE EXCEPTION 'missing cohort lifecycle guard'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'learning_assignments_contract_guard') THEN RAISE EXCEPTION 'missing cohort assignment guard'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'cohort_memberships_history_guard') THEN RAISE EXCEPTION 'missing cohort membership history guard'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'cohort_memberships_one_active_idx') THEN RAISE EXCEPTION 'missing one-active-enrollment index'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'learning_assignments_one_primary_idx') THEN RAISE EXCEPTION 'missing one-primary-assignment index'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'course_versions_immutable_after_publish') THEN RAISE EXCEPTION 'missing course version immutability trigger'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_events_append_only') THEN RAISE EXCEPTION 'missing append-only audit trigger'; END IF;
+            IF to_regclass('public.member_roles') IS NULL THEN RAISE EXCEPTION 'missing application authorization roles'; END IF;
+            IF to_regclass('public.audit_events') IS NULL THEN RAISE EXCEPTION 'missing audit event store'; END IF;
+            IF to_regclass('auth."user"') IS NULL THEN RAISE EXCEPTION 'missing Better Auth user table'; END IF;
+            IF to_regclass('auth.session') IS NULL THEN RAISE EXCEPTION 'missing Better Auth session table'; END IF;
+            IF to_regclass('auth."twoFactor"') IS NULL THEN RAISE EXCEPTION 'missing Better Auth TOTP table'; END IF;
+          END $$;
+          SQL
+
+  experience-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: pnpm/action-setup@v4
+        with: { version: '12.4.0' }
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply migrations to fresh PostgreSQL 18 database
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash scripts/apply-migrations.sh
+      - name: Learner/instructor experience integration test
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: node --test tests/integration/experience-read-model.test.ts
+
+  authority-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: skill_platform }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: pnpm/action-setup@v4
+        with: { version: '12.4.0' }
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash scripts/apply-migrations.sh
+      - name: Canonical authority chain integration test
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: node --test tests/integration/authority-chain.test.ts
+
+  cohort-operations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: skill_platform }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: pnpm/action-setup@v4
+        with: { version: '12.4.0' }
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash scripts/apply-migrations.sh
+      - name: Cohort lifecycle, assignment and membership integration test
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: node --test tests/integration/cohort-operations.test.ts
+
+  runtime-authority-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: skill_platform }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: pnpm/action-setup@v4
+        with: { version: '12.4.0' }
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply production migrations
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash scripts/apply-migrations.sh
+      - name: Production command-worker-dispatcher-authority E2E
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+          NODE_ENV: test
+        run: pnpm run test:runtime
+
+  release-e2e-failure:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: skill_platform }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: pnpm/action-setup@v4
+        with: { version: '12.4.0' }
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash scripts/apply-migrations.sh
+      - name: Canonical E2E and dependency failure matrix
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: node --test tests/e2e/canonical-journey.test.ts tests/integration/failure-matrix.test.ts
+
+  migration-failure:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: skill_platform }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Inject migration failure and verify fail-stop behavior
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash tests/migration/migration-failure.sh
+
+  performance-baseline:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: skill_platform }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: pnpm/action-setup@v4
+        with: { version: '12.4.0' }
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: bash scripts/apply-migrations.sh
+      - name: Measure representative read-model baseline
+        env: { DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/skill_platform' }
+        run: pnpm run test:performance

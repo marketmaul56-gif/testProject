@@ -1,0 +1,33 @@
+name: M12 gVisor Hostile Rehearsal
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  runsc-hostile-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official gVisor runsc release
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          sudo runsc install
+          sudo systemctl restart docker
+          runsc --version
+          docker info --format '{{json .Runtimes}}' | grep runsc
+      - name: Execute bounded hostile workloads through runsc
+        shell: bash
+        run: bash scripts/rehearse-gvisor.sh

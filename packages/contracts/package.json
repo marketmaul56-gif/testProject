@@ -1,0 +1,15 @@
+{
+  "name": "@skill-platform/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./experience": "./src/experience.ts",
+    "./ai-coaching": "./src/ai-coaching.ts",
+    "./submissions": "./src/submissions.ts",
+    "./project-artifacts": "./src/project-artifacts.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.2"
+  }
+}

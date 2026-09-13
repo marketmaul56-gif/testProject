@@ -1,0 +1,72 @@
+name: M12 Object Storage Integration
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  project-artifact-storage:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply production migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: bash scripts/apply-migrations.sh
+      - name: Start pinned S3-compatible MinIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name m12-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=m12access \
+            -e MINIO_ROOT_PASSWORD=m12-secret-key-0123456789 \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs m12-minio
+          exit 1
+      - name: Presign, upload, verify, seal and download project artifact
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+          OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
+          OBJECT_STORAGE_REGION: us-east-1
+          OBJECT_STORAGE_BUCKET: m12-artifacts
+          OBJECT_STORAGE_FORCE_PATH_STYLE: 'true'
+          OBJECT_STORAGE_ACCESS_KEY_ID: m12access
+          OBJECT_STORAGE_SECRET_ACCESS_KEY: m12-secret-key-0123456789
+        run: node --test tests/integration/project-artifact-storage.test.ts
+      - name: MinIO logs on failure
+        if: failure()
+        run: docker logs m12-minio || true
+      - name: Cleanup object storage
+        if: always()
+        run: docker rm -f m12-minio >/dev/null 2>&1 || true

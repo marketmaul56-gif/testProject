@@ -1,0 +1,139 @@
+name: M12 OCI Artifact Smoke
+
+on:
+  push:
+    branches: [main, 'm12/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply version-controlled migrations
+        run: >-
+          docker run --rm --network host
+          -v "$PWD:/workspace" -w /workspace
+          -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform
+          postgres:18 bash scripts/apply-migrations.sh
+      - name: Build immutable API image
+        run: docker build --file infrastructure/deployment/Dockerfile.api --tag skill-platform-api:${GITHUB_SHA} .
+      - name: Build immutable web image
+        run: docker build --file infrastructure/deployment/Dockerfile.web --tag skill-platform-web:${GITHUB_SHA} .
+      - name: Build immutable trusted worker image
+        run: docker build --file infrastructure/deployment/Dockerfile.worker --tag skill-platform-worker:${GITHUB_SHA} .
+      - name: Build immutable verifier-dispatcher image
+        run: docker build --file infrastructure/deployment/Dockerfile.verifier-dispatcher --tag skill-platform-verifier-dispatcher:${GITHUB_SHA} .
+      - name: Smoke API liveness and readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name m12-api --network host \
+            -e NODE_ENV=production \
+            -e PORT=3001 \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform \
+            -e 'AUTH_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform?options=-c%20search_path%3Dauth' \
+            -e BETTER_AUTH_URL=http://127.0.0.1:3001 \
+            -e BETTER_AUTH_SECRET=ci-production-smoke-secret-0123456789abcdef \
+            -e TRUSTED_ORIGINS=http://127.0.0.1:3000 \
+            -e OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000 \
+            -e OBJECT_STORAGE_REGION=us-east-1 \
+            -e OBJECT_STORAGE_BUCKET=skill-platform-ci \
+            -e OBJECT_STORAGE_FORCE_PATH_STYLE=true \
+            -e OBJECT_STORAGE_ACCESS_KEY_ID=ci-storage-access \
+            -e OBJECT_STORAGE_SECRET_ACCESS_KEY=ci-storage-secret \
+            skill-platform-api:${GITHUB_SHA}
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3001/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3001/healthz | grep '"status":"ok"'
+          curl --fail --silent http://127.0.0.1:3001/readyz | grep '"status":"ready"'
+      - name: Smoke verifier-dispatcher trusted process boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name m12-dispatcher --network host \
+            -e NODE_ENV=production \
+            -e PORT=3010 \
+            -e VERIFIER_DISPATCHER_TOKEN=ci-dispatcher-token-0123456789abcdef0123456789 \
+            -e VERIFIER_RUNTIME_IMAGE_DIGEST=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            -e VERIFIER_ROOTFS_DIR=/verifier/rootfs \
+            -e VERIFIER_HIDDEN_BUNDLES_ROOT=/verifier/hidden \
+            -e OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000 \
+            -e OBJECT_STORAGE_REGION=us-east-1 \
+            -e OBJECT_STORAGE_BUCKET=skill-platform-ci \
+            -e OBJECT_STORAGE_FORCE_PATH_STYLE=true \
+            -e OBJECT_STORAGE_ACCESS_KEY_ID=ci-storage-access \
+            -e OBJECT_STORAGE_SECRET_ACCESS_KEY=ci-storage-secret \
+            skill-platform-verifier-dispatcher:${GITHUB_SHA}
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3010/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3010/healthz | grep '"status":"ok"'
+          test "$(docker inspect --format '{{.Config.User}}' m12-dispatcher)" = "node"
+      - name: Smoke trusted worker process
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name m12-worker --network host \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/skill_platform \
+            -e REDIS_URL=redis://127.0.0.1:6379/0 \
+            -e VERIFIER_DISPATCHER_URL=http://127.0.0.1:3010 \
+            -e VERIFIER_DISPATCHER_TOKEN=ci-dispatcher-token-0123456789abcdef0123456789 \
+            -e WORKER_POLL_MS=250 \
+            skill-platform-worker:${GITHUB_SHA}
+          sleep 3
+          test "$(docker inspect --format '{{.State.Running}}' m12-worker)" = "true"
+          test "$(docker inspect --format '{{.Config.User}}' m12-worker)" = "node"
+      - name: Smoke web standalone runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name m12-web --network host \
+            -e NODE_ENV=production \
+            -e PORT=3000 \
+            -e INTERNAL_API_BASE_URL=http://127.0.0.1:3001/api/v1 \
+            skill-platform-web:${GITHUB_SHA}
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3000/ >/dev/null
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          docker logs m12-api || true
+          docker logs m12-dispatcher || true
+          docker logs m12-worker || true
+          docker logs m12-web || true
+      - name: Cleanup containers
+        if: always()
+        run: docker rm -f m12-api m12-dispatcher m12-worker m12-web >/dev/null 2>&1 || true

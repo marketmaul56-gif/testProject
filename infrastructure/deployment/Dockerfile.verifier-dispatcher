@@ -1,0 +1,26 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+RUN npm install --global pnpm@12.4.0
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.verifier-build.json ./
+COPY apps/verifier-dispatcher ./apps/verifier-dispatcher
+COPY packages ./packages
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm run build:verifier-dispatcher
+RUN pnpm prune --prod
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+
+# The dedicated verifier node must provide the approved runsc binary and the
+# pinned rootfs/hidden-test mounts. They are deliberately not baked into this
+# trusted dispatcher image or fetched at image-build time.
+COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist-verifier ./dist-verifier
+
+USER node
+EXPOSE 3010
+CMD ["node", "dist-verifier/apps/verifier-dispatcher/src/main.js"]

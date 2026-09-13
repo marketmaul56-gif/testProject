@@ -1,0 +1,433 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../packages/platform/db/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LearningVersionStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum VerificationAttemptStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+}
+
+enum VerificationOutcome {
+  PASSED
+  FAILED
+  ERROR
+}
+
+enum CompetencyProjectionStatus {
+  NOT_YET_EVIDENCED
+  EVIDENCED
+}
+
+enum CohortStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ENROLLED
+  REMOVED
+}
+
+// Persistence mappings intentionally use scalar foreign-key identifiers.
+// Cross-module relationship integrity is enforced by PostgreSQL constraints in
+// version-controlled migrations; modules do not gain write access through ORM
+// relation traversal.
+
+model Tenant {
+  id        String   @id @db.Uuid
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("tenants")
+}
+
+model Member {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  authUserId  String   @map("auth_user_id")
+  displayName String?  @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "members_tenant_id_id_key")
+  @@unique([tenantId, authUserId], map: "members_tenant_id_auth_user_id_key")
+  @@index([tenantId], map: "members_tenant_id_idx")
+  @@map("members")
+}
+
+model Course {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "courses_tenant_id_id_key")
+  @@unique([tenantId, key], map: "courses_tenant_id_key_key")
+  @@map("courses")
+}
+
+model CourseVersion {
+  id          String                @id @db.Uuid
+  tenantId    String                @map("tenant_id") @db.Uuid
+  courseId    String                @map("course_id") @db.Uuid
+  version     Int
+  status      LearningVersionStatus @default(DRAFT)
+  title       String
+  publishedAt DateTime?             @map("published_at") @db.Timestamptz(6)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "course_versions_tenant_id_id_key")
+  @@unique([tenantId, courseId, version], map: "course_versions_tenant_course_version_key")
+  @@index([tenantId, status], map: "course_versions_tenant_status_idx")
+  @@map("course_versions")
+}
+
+model ChapterVersion {
+  id              String @id @db.Uuid
+  tenantId        String @map("tenant_id") @db.Uuid
+  courseVersionId String @map("course_version_id") @db.Uuid
+  position        Int
+  title           String
+
+  @@unique([tenantId, id], map: "chapter_versions_tenant_id_id_key")
+  @@unique([courseVersionId, position], map: "chapter_versions_course_position_key")
+  @@map("chapter_versions")
+}
+
+model LessonVersion {
+  id               String @id @db.Uuid
+  tenantId         String @map("tenant_id") @db.Uuid
+  chapterVersionId String @map("chapter_version_id") @db.Uuid
+  position         Int
+  title            String
+  content          Json
+
+  @@unique([tenantId, id], map: "lesson_versions_tenant_id_id_key")
+  @@unique([chapterVersionId, position], map: "lesson_versions_chapter_position_key")
+  @@map("lesson_versions")
+}
+
+model Skill {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "skills_tenant_id_id_key")
+  @@unique([tenantId, key], map: "skills_tenant_id_key_key")
+  @@map("skills")
+}
+
+model Enrollment {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  learnerId       String   @map("learner_id") @db.Uuid
+  courseVersionId String   @map("course_version_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "enrollments_tenant_id_id_key")
+  @@unique([tenantId, learnerId, courseVersionId], map: "enrollments_tenant_learner_course_version_key")
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  learnerId       String   @map("learner_id") @db.Uuid
+  lessonVersionId String   @map("lesson_version_id") @db.Uuid
+  state           String
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "lesson_progress_tenant_id_id_key")
+  @@unique([tenantId, learnerId, lessonVersionId], map: "lesson_progress_tenant_learner_lesson_key")
+  @@map("lesson_progress")
+}
+
+model PracticeDefinition {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  lessonVersionId String   @map("lesson_version_id") @db.Uuid
+  key             String
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "practice_definitions_tenant_id_id_key")
+  @@unique([tenantId, lessonVersionId, key], map: "practice_definitions_tenant_lesson_key_key")
+  @@map("practice_definitions")
+}
+
+model PracticeRevision {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  practiceId     String   @map("practice_id") @db.Uuid
+  skillId        String   @map("skill_id") @db.Uuid
+  revisionNumber Int      @map("revision_number")
+  definition     Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "practice_revisions_tenant_id_id_key")
+  @@unique([tenantId, practiceId, revisionNumber], map: "practice_revisions_tenant_practice_revision_key")
+  @@map("practice_revisions")
+}
+
+model PracticeSubmission {
+  id                 String   @id @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  learnerId          String   @map("learner_id") @db.Uuid
+  practiceRevisionId String   @map("practice_revision_id") @db.Uuid
+  attemptNumber      Int      @map("attempt_number")
+  requestId          String   @map("request_id")
+  artifact           Json
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "practice_submissions_tenant_id_id_key")
+  @@unique([tenantId, learnerId, practiceRevisionId, attemptNumber], map: "practice_submissions_attempt_key")
+  @@unique([tenantId, learnerId, practiceRevisionId, requestId], map: "practice_submissions_request_idempotency_key")
+  @@unique([tenantId, learnerId, requestId], map: "practice_submissions_tenant_learner_request_key")
+  @@map("practice_submissions")
+}
+
+model ProjectDefinition {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  title     String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "project_definitions_tenant_id_id_key")
+  @@unique([tenantId, key], map: "project_definitions_tenant_id_key_key")
+  @@map("project_definitions")
+}
+
+model ProjectSkillAlignment {
+  id                  String   @id @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  projectDefinitionId String   @map("project_definition_id") @db.Uuid
+  skillId             String   @map("skill_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "project_skill_alignments_tenant_id_id_key")
+  @@unique([tenantId, projectDefinitionId, skillId], map: "project_skill_alignments_tenant_project_skill_key")
+  @@index([tenantId, skillId, projectDefinitionId], map: "project_skill_alignments_skill_idx")
+  @@map("project_skill_alignments")
+}
+
+model ProjectArtifact {
+  id                  String   @id @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  learnerId           String   @map("learner_id") @db.Uuid
+  projectDefinitionId String   @map("project_definition_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "project_artifacts_tenant_id_id_key")
+  @@map("project_artifacts")
+}
+
+model ArtifactRevision {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  artifactId     String    @map("artifact_id") @db.Uuid
+  revisionNumber Int       @map("revision_number")
+  objectKey      String    @map("object_key")
+  contentHash    String    @map("content_hash")
+  contentType    String?   @map("content_type")
+  contentLength  BigInt?   @map("content_length")
+  sealedAt       DateTime? @map("sealed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "artifact_revisions_tenant_id_id_key")
+  @@unique([tenantId, artifactId, revisionNumber], map: "artifact_revisions_tenant_artifact_revision_key")
+  @@unique([tenantId, objectKey], map: "artifact_revisions_tenant_object_key_key")
+  @@map("artifact_revisions")
+}
+
+model ProjectSubmission {
+  id                 String   @id @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  learnerId          String   @map("learner_id") @db.Uuid
+  artifactRevisionId String   @map("artifact_revision_id") @db.Uuid
+  requestId          String   @map("request_id")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "project_submissions_tenant_id_id_key")
+  @@unique([tenantId, learnerId, artifactRevisionId, requestId], map: "project_submissions_request_idempotency_key")
+  @@unique([tenantId, learnerId, requestId], map: "project_submissions_tenant_learner_request_key")
+  @@map("project_submissions")
+}
+
+model VerificationProfile {
+  id                  String   @id @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  targetType          String   @map("target_type")
+  targetId            String   @map("target_id") @db.Uuid
+  verifierKey         String   @map("verifier_key")
+  verifierVersion     String   @map("verifier_version")
+  hiddenTestBundleRef String   @map("hidden_test_bundle_ref")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "verification_profiles_tenant_id_id_key")
+  @@unique([tenantId, targetType, targetId], map: "verification_profiles_tenant_id_target_type_target_id_key")
+  @@index([tenantId, targetType, targetId], map: "verification_profiles_tenant_target_idx")
+  @@map("verification_profiles")
+}
+
+model VerificationAttempt {
+  id                   String                    @id @db.Uuid
+  tenantId             String                    @map("tenant_id") @db.Uuid
+  practiceSubmissionId String?                   @map("practice_submission_id") @db.Uuid
+  projectSubmissionId  String?                   @map("project_submission_id") @db.Uuid
+  status               VerificationAttemptStatus @default(PENDING)
+  verifierKey          String                    @map("verifier_key")
+  verifierVersion      String                    @map("verifier_version")
+  requestId            String                    @map("request_id")
+  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt            DateTime?                 @map("started_at") @db.Timestamptz(6)
+  completedAt          DateTime?                 @map("completed_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "verification_attempts_tenant_id_id_key")
+  @@unique([tenantId, requestId], map: "verification_attempts_tenant_request_id_key")
+  @@index([tenantId, status], map: "verification_attempts_tenant_status_idx")
+  @@map("verification_attempts")
+}
+
+model VerificationResult {
+  id                    String              @id @db.Uuid
+  tenantId              String              @map("tenant_id") @db.Uuid
+  verificationAttemptId String              @unique(map: "verification_results_attempt_key") @map("verification_attempt_id") @db.Uuid
+  learnerId             String              @map("learner_id") @db.Uuid
+  outcome               VerificationOutcome
+  diagnostic            Json?
+  completedAt           DateTime            @map("completed_at") @db.Timestamptz(6)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "verification_results_tenant_id_id_key")
+  @@index([tenantId, learnerId, outcome], map: "verification_results_tenant_learner_outcome_idx")
+  @@map("verification_results")
+}
+
+model SkillEvidence {
+  id                   String   @id @db.Uuid
+  tenantId             String   @map("tenant_id") @db.Uuid
+  learnerId            String   @map("learner_id") @db.Uuid
+  skillId              String   @map("skill_id") @db.Uuid
+  verificationResultId String   @map("verification_result_id") @db.Uuid
+  issuedAt             DateTime @map("issued_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "skill_evidence_tenant_id_id_key")
+  @@unique([tenantId, verificationResultId, skillId], map: "skill_evidence_verification_skill_key")
+  @@index([tenantId, learnerId, skillId], map: "skill_evidence_tenant_learner_skill_idx")
+  @@map("skill_evidence")
+}
+
+model CompetencyState {
+  id            String                     @id @db.Uuid
+  tenantId      String                     @map("tenant_id") @db.Uuid
+  learnerId     String                     @map("learner_id") @db.Uuid
+  skillId       String                     @map("skill_id") @db.Uuid
+  status        CompetencyProjectionStatus @default(NOT_YET_EVIDENCED)
+  evidenceCount Int                        @default(0) @map("evidence_count")
+  projectedAt   DateTime                   @map("projected_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "competency_states_tenant_id_id_key")
+  @@unique([tenantId, learnerId, skillId], map: "competency_states_tenant_learner_skill_key")
+  @@map("competency_states")
+}
+
+model Cohort {
+  id        String       @id @db.Uuid
+  tenantId  String       @map("tenant_id") @db.Uuid
+  key       String
+  name      String
+  status    CohortStatus @default(DRAFT)
+  version   Int          @default(0)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "cohorts_tenant_id_id_key")
+  @@unique([tenantId, key], map: "cohorts_tenant_id_key_key")
+  @@map("cohorts")
+}
+
+model CohortMembership {
+  id         String           @id @db.Uuid
+  tenantId   String           @map("tenant_id") @db.Uuid
+  cohortId   String           @map("cohort_id") @db.Uuid
+  learnerId  String           @map("learner_id") @db.Uuid
+  status     MembershipStatus @default(ENROLLED)
+  enrolledAt DateTime         @map("enrolled_at") @db.Timestamptz(6)
+  removedAt  DateTime?        @map("removed_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "cohort_memberships_tenant_id_id_key")
+  @@index([tenantId, cohortId, learnerId, status], map: "cohort_memberships_tenant_cohort_learner_status_idx")
+  @@map("cohort_memberships")
+}
+
+model LearningAssignment {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  cohortId        String   @map("cohort_id") @db.Uuid
+  courseVersionId String   @map("course_version_id") @db.Uuid
+  isPrimary       Boolean  @default(true) @map("is_primary")
+  assignedAt      DateTime @map("assigned_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "learning_assignments_tenant_id_id_key")
+  @@index([tenantId, cohortId, isPrimary], map: "learning_assignments_tenant_cohort_primary_idx")
+  @@map("learning_assignments")
+}
+
+model InstructorCohortRole {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  cohortId     String   @map("cohort_id") @db.Uuid
+  instructorId String   @map("instructor_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, id], map: "instructor_cohort_roles_tenant_id_id_key")
+  @@unique([tenantId, cohortId, instructorId], map: "instructor_cohort_roles_tenant_cohort_instructor_key")
+  @@map("instructor_cohort_roles")
+}
+
+model OutboxEvent {
+  id            String    @id @db.Uuid
+  tenantId      String?   @map("tenant_id") @db.Uuid
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  eventType     String    @map("event_type")
+  payload       Json
+  occurredAt    DateTime  @map("occurred_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attemptCount  Int       @default(0) @map("attempt_count")
+
+  @@index([publishedAt, occurredAt], map: "outbox_events_unpublished_idx")
+  @@index([eventType, publishedAt, attemptCount, occurredAt], map: "outbox_runtime_delivery_idx")
+  // Partial unique outbox_verification_requested_once_idx is enforced in SQL migration.
+  @@map("outbox_events")
+}
+
+model AuditEvent {
+  id           String   @id @db.Uuid
+  tenantId     String?  @map("tenant_id") @db.Uuid
+  actorType    String   @map("actor_type")
+  actorId      String?  @map("actor_id")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  metadata     Json?
+  occurredAt   DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([tenantId, occurredAt], map: "audit_events_tenant_occurred_idx")
+  @@map("audit_events")
+}
