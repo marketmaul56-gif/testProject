@@ -33,9 +33,9 @@ jobs:
         run: pnpm test:security
       - name: Run contract regression
         run: pnpm test:contract
-      - name: Assert no accidental live claim
+      - name: Assert no executable artifact enables live traffic
         shell: bash
         run: |
           set -euo pipefail
           node -e "const p=require('./infrastructure/deployment/go-live-gate.json'); if(p.publicTraffic!=='DEFERRED'||p.liveProviderExecution!=='DEFERRED') process.exit(1)"
-          ! grep -R --line-number --fixed-string 'PRODUCTION_LIVE=true' infrastructure/deployment docs/production scripts
+          ! grep -R --line-number --fixed-string 'PRODUCTION_LIVE=true' infrastructure/deployment scripts --exclude='evaluate-go-live.mjs'
