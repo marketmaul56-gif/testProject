@@ -76,32 +76,46 @@ cleanup
 pass "memory exhaustion contained"
 
 # V9: hostile code attempts to create far more processes than the locked limit.
-# Keep the parent shell alive even after fork denial, then measure the cgroup-backed
-# process population from the host. The Docker runtime contract itself is also
-# asserted so an early hostile-process exit cannot produce a false positive.
+# The runtime contract must expose the exact PID ceiling. Depending on how busybox
+# reacts to fork denial, the hostile process either remains alive at the ceiling or
+# exits after the runtime refuses another fork. Both are measured from the host.
 pid_name="${PREFIX}-pids"
 docker run -d --name "$pid_name" "${common[@]}" "$ALPINE_DIGEST" sh -c '
   i=0
   while [ "$i" -lt 128 ]; do
     sleep 20 &
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "PID_DENIED:${i}" >&2
+      while :; do :; done
+    fi
     i=$((i + 1))
   done
+  echo "PID_UNBOUNDED:${i}" >&2
   while :; do :; done
 ' >/dev/null
 sleep 2
 pids_limit="$(docker inspect "$pid_name" --format '{{.HostConfig.PidsLimit}}')"
 [[ "$pids_limit" == "32" ]] || fail "Docker PID limit contract changed: ${pids_limit}"
-set +e
-top_output="$(docker top "$pid_name" -eo pid 2>/dev/null)"
-top_rc=$?
-set -e
-[[ $top_rc -eq 0 ]] || fail "host could not inspect hostile sandbox process population"
-pid_count="$(printf '%s\n' "$top_output" | tail -n +2 | awk 'NF {count++} END {print count+0}')"
-[[ "$pid_count" =~ ^[0-9]+$ ]] || fail "could not measure sandbox process population"
-[[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"
-[[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not exercise the process limit"
+running="$(docker inspect "$pid_name" --format '{{.State.Running}}')"
+pid_log="$(docker logs "$pid_name" 2>&1 || true)"
+if grep -q 'PID_UNBOUNDED:128' <<<"$pid_log"; then
+  fail "hostile sandbox created all 128 children despite PID limit"
+fi
+if [[ "$running" == "true" ]]; then
+  set +e
+  pid_count="$(docker stats --no-stream --format '{{.PIDs}}' "$pid_name" 2>/dev/null)"
+  stats_rc=$?
+  set -e
+  [[ $stats_rc -eq 0 && "$pid_count" =~ ^[0-9]+$ ]] || fail "host could not read cgroup PID count"
+  [[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"
+  [[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not exercise the process limit"
+  pass "process exhaustion contained at ${pid_count}/32 processes"
+else
+  grep -Eqi 'resource temporarily unavailable|can.t fork|cannot fork|PID_DENIED:' <<<"$pid_log" || fail "hostile process exited without observable fork denial"
+  pass "process exhaustion contained by explicit fork denial"
+fi
 cleanup
-pass "process exhaustion contained at ${pid_count}/32 processes"
 
 # V10: hidden verifier material is not on the default learner execution surface.
 mkdir -p "${RUNNER_TEMP:-/tmp}/${PREFIX}-hidden"
