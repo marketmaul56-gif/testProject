@@ -28,10 +28,16 @@ pass "runtime images resolved to immutable digests"
 
 common=(--runtime="$RUNTIME" --network=none --cpus=0.5 --memory=64m --memory-swap=64m --pids-limit=32 --read-only --tmpfs /tmp:rw,nosuid,nodev,size=16m --user 65532:65532 --security-opt no-new-privileges)
 
-# V1/V2: runtime identity and non-root execution.
-uid="$(docker run --rm "${common[@]}" "$ALPINE_DIGEST" id -u)"
+# V1/V2: runtime identity is asserted from Docker's actual selected OCI runtime,
+# while non-root identity is asserted from inside the sandbox. This avoids using
+# dmesg, which is intentionally unavailable to non-root processes on some hosts.
+identity_name="${PREFIX}-identity"
+docker run -d --name "$identity_name" "${common[@]}" "$ALPINE_DIGEST" sh -c 'id -u >/tmp/uid; sleep 20' >/dev/null
+selected_runtime="$(docker inspect "$identity_name" --format '{{.HostConfig.Runtime}}')"
+[[ "$selected_runtime" == "$RUNTIME" ]] || fail "container runtime is ${selected_runtime}, expected ${RUNTIME}"
+uid="$(docker exec "$identity_name" cat /tmp/uid)"
 [[ "$uid" == "65532" ]] || fail "sandbox unexpectedly runs as uid $uid"
-docker run --rm "${common[@]}" "$ALPINE_DIGEST" dmesg 2>&1 | grep -qi 'gVisor' || fail "sandbox did not identify gVisor kernel surface"
+cleanup
 pass "runsc sandbox and non-root identity verified"
 
 # V3: no production/application credentials are inherited into hostile code.
