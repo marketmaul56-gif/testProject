@@ -101,26 +101,32 @@ resource "aws_launch_template" "verifier" {
 resource "aws_autoscaling_group" "verifier" {
   name                = "${local.name_prefix}-verifier"
   vpc_zone_identifier = [for subnet in aws_subnet.app : subnet.id]
+  target_group_arns   = [aws_lb_target_group.verifier.arn]
 
   min_size         = 0
   max_size         = 2
   desired_capacity = var.verifier_desired_capacity
 
-  health_check_type         = "EC2"
+  health_check_type         = "ELB"
   health_check_grace_period = 300
 
   launch_template {
     id      = aws_launch_template.verifier.id
-    version = "$Latest"
+    version = aws_launch_template.verifier.latest_version
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      instance_warmup        = 300
+      min_healthy_percentage = 0
+    }
   }
 
   tag {
     key                 = "Name"
     value               = "${local.name_prefix}-verifier"
     propagate_at_launch = true
-  }
-
-  lifecycle {
-    ignore_changes = [desired_capacity]
   }
 }
