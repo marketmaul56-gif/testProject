@@ -6,7 +6,7 @@ environment  = "production"
 aws_region   = "ap-southeast-3"
 
 availability_zones = ["ap-southeast-3a", "ap-southeast-3b"]
-vpc_cidr            = "10.40.0.0/16"
+vpc_cidr           = "10.40.0.0/16"
 
 artifact_bucket_name = "REPLACE-WITH-GLOBALLY-UNIQUE-PRODUCTION-BUCKET"
 artifact_cors_allowed_origins = [
@@ -26,12 +26,17 @@ redis_node_type         = "cache.t4g.small"
 redis_auth_token = "REPLACE-WITH-32-TO-128-CHARACTER-SECRET"
 
 # Pin a reviewed Amazon Linux 2023 x86_64 AMI available in ap-southeast-3.
-verifier_ami_id        = "ami-REPLACE"
-verifier_instance_type = "m6i.large"
+verifier_ami_id           = "ami-REPLACE"
+verifier_instance_type    = "m6i.large"
 verifier_desired_capacity = 0
 
 # Pin an official gVisor runsc release artifact and its SHA-512 digest.
 runsc_download_url = "https://REPLACE-WITH-PINNED-RUNSC-URL"
 runsc_sha512       = "REPLACE-WITH-128-HEX-SHA512"
+
+# Before apply, obtain the current root CA SHA-1 thumbprint(s) for
+# https://token.actions.githubusercontent.com from the live certificate chain.
+# GitHub federation itself is locked to the immutable repository/main subject in variables.tf.
+github_oidc_thumbprints = ["REPLACE-WITH-40-HEX-ROOT-CA-SHA1"]
 
 offline_validation = false
