@@ -56,6 +56,8 @@ jobs:
       - name: Regress security authority boundaries
         run: pnpm test:security
       - name: Regress performance baseline
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
         run: pnpm test:performance
       - name: Verify operations and recovery runbooks exist
         shell: bash
