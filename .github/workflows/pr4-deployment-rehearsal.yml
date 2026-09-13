@@ -1,0 +1,175 @@
+name: PR.4 Deployment Rehearsal Gate
+
+on:
+  push:
+    branches: [main, 'production/pr4-**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-rehearsal:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Assert provider execution remains deferred
+        run: |
+          test "${LIVE_PROVIDER_EXECUTION:-DEFERRED}" = "DEFERRED"
+          test -z "${AWS_ACCESS_KEY_ID:-}"
+          test -z "${AWS_SECRET_ACCESS_KEY:-}"
+      - name: Apply canonical migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: bash scripts/apply-migrations.sh
+      - name: Create pre-deployment rollback checkpoint
+        run: pg_dump -h 127.0.0.1 -U postgres -d skill_platform -Fc -f /tmp/pr4-pre-smoke.dump
+        env:
+          PGPASSWORD: postgres
+      - name: Start pinned S3-compatible object storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name pr4-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=pr4access \
+            -e MINIO_ROOT_PASSWORD=pr4-secret-key-0123456789 \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs pr4-minio
+          exit 1
+      - name: Build exact deployment images
+        run: |
+          docker build -f infrastructure/deployment/Dockerfile.api -t skill-platform-api:${GITHUB_SHA} .
+          docker build -f infrastructure/deployment/Dockerfile.web -t skill-platform-web:${GITHUB_SHA} .
+          docker build -f infrastructure/deployment/Dockerfile.worker -t skill-platform-worker:${GITHUB_SHA} .
+          docker build -f infrastructure/deployment/Dockerfile.verifier-dispatcher -t skill-platform-verifier-dispatcher:${GITHUB_SHA} .
+      - name: Start API and verify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name pr4-api --network host \
+            -e NODE_ENV=production -e PORT=3001 \
+            -e DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/skill_platform \
+            -e 'AUTH_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/skill_platform?options=-c%20search_path%3Dauth' \
+            -e BETTER_AUTH_URL=http://127.0.0.1:3001 \
+            -e BETTER_AUTH_SECRET=pr4-production-smoke-secret-0123456789abcdef \
+            -e TRUSTED_ORIGINS=http://127.0.0.1:3000 \
+            -e OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000 \
+            -e OBJECT_STORAGE_REGION=us-east-1 \
+            -e OBJECT_STORAGE_BUCKET=pr4-artifacts \
+            -e OBJECT_STORAGE_FORCE_PATH_STYLE=true \
+            -e OBJECT_STORAGE_ACCESS_KEY_ID=pr4access \
+            -e OBJECT_STORAGE_SECRET_ACCESS_KEY=pr4-secret-key-0123456789 \
+            skill-platform-api:${GITHUB_SHA}
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3001/readyz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3001/healthz | grep '"status":"ok"'
+          curl -fsS http://127.0.0.1:3001/readyz | grep '"status":"ready"'
+          test "$(docker inspect --format '{{.Config.User}}' pr4-api)" = "node"
+      - name: Start verifier dispatcher, worker and web
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name pr4-dispatcher --network host \
+            -e NODE_ENV=production -e PORT=3010 \
+            -e VERIFIER_DISPATCHER_TOKEN=pr4-dispatcher-token-0123456789abcdef0123456789 \
+            -e VERIFIER_RUNTIME_IMAGE_DIGEST=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            -e VERIFIER_ROOTFS_DIR=/verifier/rootfs \
+            -e VERIFIER_HIDDEN_BUNDLES_ROOT=/verifier/hidden \
+            -e OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000 \
+            -e OBJECT_STORAGE_REGION=us-east-1 \
+            -e OBJECT_STORAGE_BUCKET=pr4-artifacts \
+            -e OBJECT_STORAGE_FORCE_PATH_STYLE=true \
+            -e OBJECT_STORAGE_ACCESS_KEY_ID=pr4access \
+            -e OBJECT_STORAGE_SECRET_ACCESS_KEY=pr4-secret-key-0123456789 \
+            skill-platform-verifier-dispatcher:${GITHUB_SHA}
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3010/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3010/healthz | grep '"status":"ok"'
+          test "$(docker inspect --format '{{.Config.User}}' pr4-dispatcher)" = "node"
+          docker run -d --name pr4-worker --network host \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/skill_platform \
+            -e REDIS_URL=redis://127.0.0.1:6379/0 \
+            -e VERIFIER_DISPATCHER_URL=http://127.0.0.1:3010 \
+            -e VERIFIER_DISPATCHER_TOKEN=pr4-dispatcher-token-0123456789abcdef0123456789 \
+            -e WORKER_POLL_MS=250 \
+            skill-platform-worker:${GITHUB_SHA}
+          docker run -d --name pr4-web --network host \
+            -e NODE_ENV=production -e PORT=3000 \
+            -e INTERNAL_API_BASE_URL=http://127.0.0.1:3001/api/v1 \
+            skill-platform-web:${GITHUB_SHA}
+          sleep 3
+          test "$(docker inspect --format '{{.State.Running}}' pr4-worker)" = "true"
+          test "$(docker inspect --format '{{.Config.User}}' pr4-worker)" = "node"
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/ >/dev/null
+      - name: Run canonical competence-chain regression
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skill_platform
+        run: pnpm test:e2e
+      - name: Rehearse rollback checkpoint restoration
+        shell: bash
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          createdb -h 127.0.0.1 -U postgres skill_platform_rollback
+          pg_restore -h 127.0.0.1 -U postgres -d skill_platform_rollback /tmp/pr4-pre-smoke.dump
+          source_tables=$(psql -h 127.0.0.1 -U postgres -d skill_platform -Atc "select count(*) from information_schema.tables where table_schema in ('public','auth')")
+          restored_tables=$(psql -h 127.0.0.1 -U postgres -d skill_platform_rollback -Atc "select count(*) from information_schema.tables where table_schema in ('public','auth')")
+          test "$source_tables" -gt 0
+          test "$source_tables" = "$restored_tables"
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker logs pr4-api || true
+          docker logs pr4-dispatcher || true
+          docker logs pr4-worker || true
+          docker logs pr4-web || true
+          docker logs pr4-minio || true
+      - name: Cleanup rehearsal services
+        if: always()
+        run: docker rm -f pr4-api pr4-dispatcher pr4-worker pr4-web pr4-minio >/dev/null 2>&1 || true
