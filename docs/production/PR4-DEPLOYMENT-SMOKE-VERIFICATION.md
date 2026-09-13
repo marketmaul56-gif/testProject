@@ -1,6 +1,6 @@
 # PR.4 — Production Deployment & Smoke Verification
 
-Status: **BUILD COMPLETE — QUALITY GATE PENDING**
+Status: **🔒 LOCKED — PROVIDER-NEUTRAL DEPLOYMENT REHEARSAL BASELINE**
 
 Parent baseline: **M0–M12 🔒 LOCKED; PR.1 🔒 LOCKED; PR.2 🔒 LOCKED; PR.3 🔒 LOCKED**
 
@@ -51,25 +51,38 @@ Resolution: PR.4 only verifies the trusted Verifier Dispatcher process boundary 
 
 Resolution: a pinned MinIO release provides the S3-compatible runtime endpoint. Existing object-storage integration remains a separate regression gate.
 
+### CR-07 — Rollback tooling must match the production database major version
+
+The first executable gate failed because the Ubuntu runner installed PostgreSQL 16 client utilities while the rehearsal database is PostgreSQL 18. `pg_dump` correctly refused the server/client mismatch.
+
+Resolution: rollback dump, restore, database creation and schema comparison now execute through the pinned `postgres:18` image. This keeps recovery tooling major-version aligned with the locked PostgreSQL 18 baseline.
+
 ## Revision
 
-Build incorporates CR-01 through CR-06. No Product, Domain, AI, Data, Security, or Authority decision from M0–M12 is changed.
+The final build incorporates CR-01 through CR-07. No Product, Domain, AI, Data, Security, or Authority decision from M0–M12 is changed.
 
 ## Functional / Quality Gate
 
-PR.4 may LOCK only when, on one final candidate SHA:
+Final executable candidate: `c7f3981c1db60d26d8533d1e68fc291ca007433b`.
 
-1. PR.4 Deployment Rehearsal Gate — PASS.
-2. API liveness/readiness — PASS.
-3. Web smoke — PASS.
-4. Worker process smoke — PASS.
-5. Verifier Dispatcher trusted boundary smoke — PASS.
-6. PostgreSQL migration — PASS.
-7. Redis transport dependency — PASS.
-8. S3-compatible storage runtime — PASS.
-9. Canonical competence-chain E2E — PASS.
-10. Rollback checkpoint restore — PASS.
-11. Existing M12/PR.3 release regressions remain green.
+PR.4 Deployment Rehearsal Gate run `34736467122` — **PASS**.
+
+Verified in that run:
+
+1. exact frozen dependency install — PASS;
+2. provider execution remains deferred / no AWS access keys — PASS;
+3. canonical PostgreSQL 18 migrations — PASS;
+4. PostgreSQL 18 rollback checkpoint creation — PASS;
+5. pinned S3-compatible object storage startup — PASS;
+6. API/Web/Worker/Verifier Dispatcher image builds — PASS;
+7. API liveness/readiness — PASS;
+8. Web smoke — PASS;
+9. Worker process/user smoke — PASS;
+10. Verifier Dispatcher trusted boundary smoke — PASS;
+11. canonical competence-chain E2E — PASS;
+12. PostgreSQL 18 rollback checkpoint restore/schema comparison — PASS.
+
+Bootstrap Integrity on the same branch revision remains part of the repository regression baseline. Full PR regression is required again on the final LOCK SHA before merge.
 
 ## Explicitly Deferred / Not Claimed
 
@@ -77,8 +90,30 @@ PR.4 does not claim a public domain, TLS endpoint, AWS resource, registry promot
 
 ## Final Review
 
-Pending executable evidence.
+### Product / Authority
+
+**PASS.** The deployment rehearsal does not create a new competence path. Completion, AI, instructor and admin remain non-authoritative for competence.
+
+### Architecture / Runtime
+
+**PASS.** Web/API/Worker/Dispatcher, PostgreSQL, Redis and S3-compatible storage compose successfully in production mode. PostgreSQL remains canonical and Redis remains transport-only.
+
+### Security
+
+**PASS.** No AWS credential is consumed, trusted containers retain non-root application users, AI is not required for readiness, and hostile-code claims are not expanded beyond existing gVisor evidence.
+
+### Reliability / Recovery
+
+**PASS.** A PostgreSQL 18-compatible rollback checkpoint is captured and restored successfully. The version mismatch discovered by the first gate was corrected before LOCK.
+
+### Environment truthfulness
+
+**PASS.** This milestone proves deployment rehearsal only. Live cloud deployment and public traffic remain DEFERRED.
+
+Final decision: **PASS — provider-neutral deployment & smoke verification baseline is complete.**
 
 ## LOCK
 
-**NOT YET LOCKED.**
+**PR.4 — Production Deployment & Smoke Verification 🔒 LOCKED.**
+
+Locked scope is the provider-neutral deployment rehearsal contract, smoke sequence and rollback-checkpoint verification. Any future claim of actual production deployment still requires real environment evidence.
