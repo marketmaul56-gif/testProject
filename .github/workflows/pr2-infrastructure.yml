@@ -41,8 +41,14 @@ jobs:
           tofu validate
 
       - name: Offline graph plan
-        working-directory: infrastructure/opentofu/aws-production
         run: |
+          rm -rf /tmp/pr2-offline
+          cp -R infrastructure/opentofu/aws-production /tmp/pr2-offline
+          rm -rf /tmp/pr2-offline/.terraform /tmp/pr2-offline/.terraform.lock.hcl
+          rm /tmp/pr2-offline/backend.tf
+          cd /tmp/pr2-offline
+          tofu init -backend=false -input=false
+          tofu validate
           tofu plan \
             -refresh=false \
             -input=false \
