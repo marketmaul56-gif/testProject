@@ -68,13 +68,17 @@ export class S3ObjectStorage {
       ChecksumSHA256: checksum,
       Metadata: { "content-hash": input.contentHash },
     });
-    // The checksum must remain a signed request header rather than being
-    // hoisted into the presigned query string. This makes the browser/client
-    // upload contract explicit and lets S3-compatible implementations reject
-    // any checksum/metadata header that was not covered by the signature.
+    // Integrity headers must stay in the canonical signed-header surface.
+    // AWS SDK otherwise may hoist x-amz-* values into the query string; if a
+    // browser then sends the same x-amz-* header, strict S3-compatible servers
+    // correctly reject it as an unsigned header. Keep both checksum and
+    // immutable provenance metadata unhoisted and signed.
     const url = await getSignedUrl(this.client, command, {
       expiresIn,
-      unhoistableHeaders: new Set(["x-amz-checksum-sha256"]),
+      unhoistableHeaders: new Set([
+        "x-amz-checksum-sha256",
+        "x-amz-meta-content-hash",
+      ]),
       signableHeaders: new Set([
         "content-type",
         "x-amz-checksum-sha256",
