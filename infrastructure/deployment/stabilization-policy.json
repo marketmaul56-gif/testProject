@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "executionMode": "synthetic-rehearsal",
+  "liveObservation": "DEFERRED",
+  "thresholds": {
+    "api5xxErrorRatePct": 2,
+    "learnerOverviewP95Ms": 100,
+    "instructorCohortOverviewP95Ms": 200,
+    "authorityQueueBacklog": 100,
+    "verifierInfrastructureErrorRatePct": 5,
+    "coreDependencyFailureRatePct": 5,
+    "authorityIntegrityAnomalies": 0
+  },
+  "requiredSignals": [
+    "api5xxErrorRatePct",
+    "learnerOverviewP95Ms",
+    "instructorCohortOverviewP95Ms",
+    "authorityQueueBacklog",
+    "verifierInfrastructureErrorRatePct",
+    "coreDependencyFailureRatePct",
+    "authorityIntegrityAnomalies",
+    "aiAvailable"
+  ],
+  "decisions": {
+    "stable": "STABLE",
+    "aiOnlyDegraded": "DEGRADED_AI_ONLY_CONTINUE",
+    "investigate": "HOLD_INVESTIGATE",
+    "rollback": "ROLLBACK_ESCALATE",
+    "authorityP0": "P0_ROLLBACK",
+    "insufficientSignal": "HOLD_INSUFFICIENT_SIGNAL"
+  },
+  "principles": {
+    "aiOutageStopsCore": false,
+    "infrastructureFailureIsLearnerFail": false,
+    "authorityIntegrityAnomalySeverity": "P0",
+    "publicTrafficObserved": false
+  }
+}
