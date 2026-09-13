@@ -31,16 +31,16 @@ resource "aws_db_instance" "main" {
   storage_type          = "gp3"
   storage_encrypted     = true
 
-  multi_az               = true
-  publicly_accessible    = false
-  deletion_protection    = true
-  skip_final_snapshot    = false
+  multi_az                  = true
+  publicly_accessible       = false
+  deletion_protection       = true
+  skip_final_snapshot       = false
   final_snapshot_identifier = "${local.name_prefix}-final"
-  copy_tags_to_snapshot  = true
+  copy_tags_to_snapshot     = true
 
-  backup_retention_period = 7
-  backup_window           = "18:00-19:00"
-  maintenance_window      = "Sun:19:30-Sun:20:30"
+  backup_retention_period    = 7
+  backup_window              = "18:00-19:00"
+  maintenance_window         = "Sun:19:30-Sun:20:30"
   auto_minor_version_upgrade = true
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
