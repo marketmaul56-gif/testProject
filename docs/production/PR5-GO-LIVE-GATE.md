@@ -1,6 +1,6 @@
 # PR.5 — Go-Live Gate
 
-Status: **BUILD COMPLETE — QUALITY GATE PENDING**
+Status: **🔒 LOCKED — GO-LIVE CONTROL / READINESS BASELINE; PUBLIC TRAFFIC DEFERRED**
 
 Parent baseline: **M0–M12 🔒 LOCKED; PR.1–PR.4 🔒 LOCKED**
 
@@ -8,20 +8,20 @@ Execution mode: **provider-neutral go-live control rehearsal; live environment a
 
 ## Purpose
 
-PR.5 converts the locked release/deployment evidence into an explicit release-control decision. Because the project owner has chosen not to involve a live AWS environment, this milestone must distinguish two different outcomes:
+PR.5 converts the locked release/deployment evidence into an explicit release-control decision. Because the project owner has chosen not to involve a live AWS environment, this milestone distinguishes:
 
-- **release/readiness control baseline:** may PASS and LOCK;
-- **actual public production go-live:** remains NO-GO / DEFERRED until live environment evidence exists.
+- **release/readiness control baseline:** PASS and LOCKED;
+- **actual public production go-live:** NO-GO / DEFERRED until live environment evidence exists.
 
 ## Build
 
-PR.5 adds a machine-readable go-live policy and evaluator that require:
+PR.5 adds:
 
-- PR.3 release artifact baseline locked;
-- PR.4 deployment rehearsal baseline locked;
-- release artifact, deployment rehearsal, rollback, security, authority and gVisor offline gates = PASS;
-- public domain/TLS, live secrets, registry promotion, production migration, live backup and public traffic = DEFERRED;
-- competence authority invariants remain unchanged.
+- `infrastructure/deployment/go-live-gate.json` as the machine-readable release decision;
+- `scripts/evaluate-go-live.mjs` as the policy evaluator;
+- `.github/workflows/pr5-go-live-gate.yml` as the executable gate.
+
+The policy requires PR.3 and PR.4 locked, all offline release/deployment/security/authority/gVisor gates PASS, all live-environment actions DEFERRED, and all competence-authority invariants unchanged.
 
 ## Critical Review
 
@@ -41,36 +41,66 @@ Resolution: the evaluator rejects completion-as-competence, AI PASS/FAIL authori
 
 Resolution: PR.5 executes security and contract regressions in addition to the machine-readable release decision policy.
 
+### CR-05 — A naive forbidden-string scan can self-match governance documentation
+
+The first executable PR.5 gate passed policy evaluation, milestone prerequisites, 27/27 security tests and 10/10 contract tests, but the final textual scan failed because the documentation itself contained the literal marker being searched for.
+
+Resolution: the machine-readable policy remains authoritative, and the forbidden live-enablement marker scan is scoped to executable/deployment artifacts (`infrastructure/deployment` and `scripts`) rather than governance prose. The corrected scan passed.
+
 ## Revision
 
-Build incorporates CR-01 through CR-04. No locked Product, Domain, Data, AI or Security authority decision is changed.
+The final Build incorporates CR-01 through CR-05. No locked Product, Domain, Data, AI, Security or authority decision is changed.
 
 ## Functional / Quality Gate
 
-PR.5 may LOCK only when:
+Corrected executable candidate: `0c38cc3115245c06188809984740aca9b48e7a35`.
+
+PR.5 Go-Live Control Gate run `34736964849` — **PASS**.
+
+Verified:
 
 1. machine-readable go-live policy evaluation — PASS;
-2. PR.3 lock prerequisite — PASS;
-3. PR.4 lock prerequisite — PASS;
-4. security regression — PASS;
-5. contract regression — PASS;
-6. accidental `PRODUCTION_LIVE=true` claim scan — PASS;
-7. full PR regression remains green.
+2. decision = `NO_GO_LIVE_TRAFFIC__READINESS_BASELINE_PASS` — PASS;
+3. PR.3 lock prerequisite — PASS;
+4. PR.4 lock prerequisite — PASS;
+5. security regression — PASS, 27/27;
+6. contract regression — PASS, 10/10;
+7. executable/deployment live-enablement scan — PASS;
+8. public traffic remains `DEFERRED` — PASS;
+9. live provider execution remains `DEFERRED` — PASS.
+
+Full PR regression is required again on the final LOCK SHA before merge.
 
 ## Go-Live Decision Semantics
 
-Current allowed decision:
-
-**READINESS BASELINE: PASS**
+**READINESS / GO-LIVE CONTROL BASELINE: PASS**
 
 **PUBLIC PRODUCTION TRAFFIC: NO-GO / DEFERRED**
 
-This is not a failed milestone. It is the correct gate result for a project that intentionally excludes live infrastructure execution.
+This is the correct gate result for the current project scope and is not a claim that the application is publicly live.
 
 ## Final Review
 
-Pending executable gate evidence.
+### Product / Authority
+
+**PASS.** Completion, AI, instructor and admin remain outside evidence/competence authority. Evidence remains authoritative-verification-only; competency remains deterministic/read-only.
+
+### Security / Contracts
+
+**PASS.** Security and contract suites remain green, including TOTP platform-admin enforcement, cross-tenant authorization and AI/verifier authority boundaries.
+
+### Release Control
+
+**PASS.** The decision is explicit, machine-readable and fail-closed: offline readiness may PASS, while live environment gates cannot silently become PASS.
+
+### Environment Truthfulness
+
+**PASS.** Public domain/TLS, production secrets, registry promotion, production database migration, live backup and traffic enablement remain DEFERRED.
+
+Final decision: **PASS — Go-Live Control / Readiness Baseline complete; public traffic remains NO-GO / DEFERRED.**
 
 ## LOCK
 
-**NOT YET LOCKED.**
+**PR.5 — Go-Live Gate 🔒 LOCKED (control/readiness baseline only).**
+
+Any future transition from `DEFERRED` to actual public traffic requires real live-environment evidence and a new release decision; this LOCK must not be interpreted as `PRODUCTION LIVE`.
