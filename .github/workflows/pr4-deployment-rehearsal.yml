@@ -43,8 +43,6 @@ jobs:
           version: '12.4.0'
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Assert provider execution remains deferred
         run: |
           test "${LIVE_PROVIDER_EXECUTION:-DEFERRED}" = "DEFERRED"
@@ -54,10 +52,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
         run: bash scripts/apply-migrations.sh
-      - name: Create pre-deployment rollback checkpoint
-        run: pg_dump -h 127.0.0.1 -U postgres -d skill_platform -Fc -f /tmp/pr4-pre-smoke.dump
-        env:
-          PGPASSWORD: postgres
+      - name: Create pre-deployment rollback checkpoint with PostgreSQL 18 client
+        run: >-
+          docker run --rm --network host -e PGPASSWORD=postgres -v /tmp:/backup
+          postgres:18 pg_dump -h 127.0.0.1 -U postgres -d skill_platform -Fc -f /backup/pr4-pre-smoke.dump
       - name: Start pinned S3-compatible object storage
         shell: bash
         run: |
@@ -150,16 +148,18 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skill_platform
         run: pnpm test:e2e
-      - name: Rehearse rollback checkpoint restoration
+      - name: Rehearse rollback checkpoint restoration with PostgreSQL 18 client
         shell: bash
-        env:
-          PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          createdb -h 127.0.0.1 -U postgres skill_platform_rollback
-          pg_restore -h 127.0.0.1 -U postgres -d skill_platform_rollback /tmp/pr4-pre-smoke.dump
-          source_tables=$(psql -h 127.0.0.1 -U postgres -d skill_platform -Atc "select count(*) from information_schema.tables where table_schema in ('public','auth')")
-          restored_tables=$(psql -h 127.0.0.1 -U postgres -d skill_platform_rollback -Atc "select count(*) from information_schema.tables where table_schema in ('public','auth')")
+          docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            createdb -h 127.0.0.1 -U postgres skill_platform_rollback
+          docker run --rm --network host -e PGPASSWORD=postgres -v /tmp:/backup postgres:18 \
+            pg_restore -h 127.0.0.1 -U postgres -d skill_platform_rollback /backup/pr4-pre-smoke.dump
+          source_tables=$(docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d skill_platform -Atc "select count(*) from information_schema.tables where table_schema in ('public','auth')")
+          restored_tables=$(docker run --rm --network host -e PGPASSWORD=postgres postgres:18 \
+            psql -h 127.0.0.1 -U postgres -d skill_platform_rollback -Atc "select count(*) from information_schema.tables where table_schema in ('public','auth')")
           test "$source_tables" -gt 0
           test "$source_tables" = "$restored_tables"
       - name: Logs on failure
