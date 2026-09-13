@@ -1,0 +1,62 @@
+name: PR.2 Infrastructure Gate
+
+on:
+  push:
+    branches: ['production/pr2-infrastructure']
+  pull_request:
+    paths:
+      - 'infrastructure/opentofu/aws-production/**'
+      - '.github/workflows/pr2-infrastructure.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: offline-validation
+      AWS_SECRET_ACCESS_KEY: offline-validation
+      AWS_REGION: ap-southeast-3
+      AWS_DEFAULT_REGION: ap-southeast-3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: Format gate
+        run: tofu fmt -check -recursive -diff infrastructure/opentofu/aws-production
+
+      - name: Bootstrap validate
+        working-directory: infrastructure/opentofu/aws-production/bootstrap
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
+      - name: Production root init and validate
+        working-directory: infrastructure/opentofu/aws-production
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+
+      - name: Offline graph plan
+        working-directory: infrastructure/opentofu/aws-production
+        run: |
+          tofu plan \
+            -refresh=false \
+            -input=false \
+            -lock=false \
+            -var-file=ci.tfvars \
+            -out=/tmp/pr2.tfplan
+          tofu show -json /tmp/pr2.tfplan >/tmp/pr2-plan.json
+
+      - name: Security contract assertions
+        run: bash infrastructure/opentofu/aws-production/check-production-infra.sh
+
+      - name: Reject unexpected destroy actions in foundation plan
+        run: |
+          if jq -e '.resource_changes[]? | select(.change.actions | index("delete"))' /tmp/pr2-plan.json >/dev/null; then
+            echo 'offline foundation plan contains a delete action' >&2
+            exit 1
+          fi
