@@ -78,8 +78,8 @@ data "aws_iam_policy_document" "github_release" {
   }
 
   statement {
-    sid    = "PassOnlyApplicationTaskRoles"
-    effect = "Allow"
+    sid     = "PassOnlyApplicationTaskRoles"
+    effect  = "Allow"
     actions = ["iam:PassRole"]
     resources = [
       aws_iam_role.ecs_execution.arn,
