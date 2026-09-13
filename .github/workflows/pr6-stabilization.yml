@@ -11,6 +11,19 @@ permissions:
 jobs:
   stabilization-gate:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: skill_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skill_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,6 +34,12 @@ jobs:
           version: '12.4.0'
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply canonical migrations for failure rehearsal
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
+        run: bash scripts/apply-migrations.sh
       - name: Verify prerequisite release-control lock
         shell: bash
         run: |
@@ -31,6 +50,8 @@ jobs:
       - name: Run synthetic incident decision rehearsal
         run: node scripts/evaluate-stabilization.mjs --self-test
       - name: Regress dependency and failure semantics
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
         run: pnpm test:failure
       - name: Regress security authority boundaries
         run: pnpm test:security
