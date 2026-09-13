@@ -1,0 +1,41 @@
+name: PR.5 Go-Live Control Gate
+
+on:
+  push:
+    branches: [main, 'production/pr5-**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go-live-control:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.4.0'
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Evaluate machine-readable go-live policy
+        run: node scripts/evaluate-go-live.mjs
+      - name: Verify prerequisite milestone locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'PR.3 — Release Artifact & Data Preparation 🔒 LOCKED' docs/production/PR3-RELEASE-ARTIFACT-DATA-PREPARATION.md
+          grep -q 'PR.4 — Production Deployment & Smoke Verification 🔒 LOCKED' docs/production/PR4-DEPLOYMENT-SMOKE-VERIFICATION.md
+      - name: Run security regression
+        run: pnpm test:security
+      - name: Run contract regression
+        run: pnpm test:contract
+      - name: Assert no executable artifact enables live traffic
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const p=require('./infrastructure/deployment/go-live-gate.json'); if(p.publicTraffic!=='DEFERRED'||p.liveProviderExecution!=='DEFERRED') process.exit(1)"
+          ! grep -R --line-number --fixed-string 'PRODUCTION_LIVE=true' infrastructure/deployment scripts --exclude='evaluate-go-live.mjs'

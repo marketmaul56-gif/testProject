@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "executionMode": "provider-neutral-rehearsal",
+  "liveProviderExecution": "DEFERRED",
+  "publicTraffic": "DEFERRED",
+  "decision": "NO_GO_LIVE_TRAFFIC__READINESS_BASELINE_PASS",
+  "requiredLockedMilestones": ["PR.3", "PR.4"],
+  "authority": {
+    "completionIsCompetence": false,
+    "aiCanPassFail": false,
+    "adminCanCreateEvidence": false,
+    "instructorCanCreateEvidence": false,
+    "evidenceAuthority": "authoritative-verification-only",
+    "competencyProjection": "deterministic-read-only"
+  },
+  "offlineGates": {
+    "releaseArtifact": "PASS",
+    "deploymentRehearsal": "PASS",
+    "rollbackRehearsal": "PASS",
+    "securityRegression": "PASS",
+    "authorityRegression": "PASS",
+    "gvisorRegression": "PASS"
+  },
+  "liveEnvironmentGates": {
+    "publicDomainTls": "DEFERRED",
+    "productionSecrets": "DEFERRED",
+    "liveRegistryPromotion": "DEFERRED",
+    "productionDatabaseMigration": "DEFERRED",
+    "liveBackupCheckpoint": "DEFERRED",
+    "publicTrafficEnablement": "DEFERRED"
+  }
+}
