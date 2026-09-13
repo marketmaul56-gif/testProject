@@ -68,7 +68,19 @@ export class S3ObjectStorage {
       ChecksumSHA256: checksum,
       Metadata: { "content-hash": input.contentHash },
     });
-    const url = await getSignedUrl(this.client, command, { expiresIn });
+    // The checksum must remain a signed request header rather than being
+    // hoisted into the presigned query string. This makes the browser/client
+    // upload contract explicit and lets S3-compatible implementations reject
+    // any checksum/metadata header that was not covered by the signature.
+    const url = await getSignedUrl(this.client, command, {
+      expiresIn,
+      unhoistableHeaders: new Set(["x-amz-checksum-sha256"]),
+      signableHeaders: new Set([
+        "content-type",
+        "x-amz-checksum-sha256",
+        "x-amz-meta-content-hash",
+      ]),
+    });
     return Object.freeze({
       url,
       objectKey: input.objectKey,
