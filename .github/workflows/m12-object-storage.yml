@@ -47,7 +47,7 @@ jobs:
           docker run -d --name m12-minio -p 9000:9000 \
             -e MINIO_ROOT_USER=m12access \
             -e MINIO_ROOT_PASSWORD=m12-secret-key-0123456789 \
-            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; then exit 0; fi
             sleep 1
@@ -58,7 +58,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skill_platform
           OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
+          OBJECT_STORAGE_REGION: us-east-1
           OBJECT_STORAGE_BUCKET: m12-artifacts
+          OBJECT_STORAGE_FORCE_PATH_STYLE: 'true'
           OBJECT_STORAGE_ACCESS_KEY_ID: m12access
           OBJECT_STORAGE_SECRET_ACCESS_KEY: m12-secret-key-0123456789
         run: node --test tests/integration/project-artifact-storage.test.ts
