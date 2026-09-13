@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   release-package:
     runs-on: ubuntu-latest
@@ -27,6 +30,15 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - name: Verify exact source binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${RELEASE_SOURCE_SHA}"
+          test "${#RELEASE_SOURCE_SHA}" = "40"
 
       - uses: actions/setup-node@v4
         with:
@@ -97,10 +109,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build --file infrastructure/deployment/Dockerfile.api --tag skill-platform-api:${GITHUB_SHA} .
-          docker build --file infrastructure/deployment/Dockerfile.web --tag skill-platform-web:${GITHUB_SHA} .
-          docker build --file infrastructure/deployment/Dockerfile.worker --tag skill-platform-worker:${GITHUB_SHA} .
-          docker build --file infrastructure/deployment/Dockerfile.verifier-dispatcher --tag skill-platform-verifier-dispatcher:${GITHUB_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.api --tag skill-platform-api:${RELEASE_SOURCE_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.web --tag skill-platform-web:${RELEASE_SOURCE_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.worker --tag skill-platform-worker:${RELEASE_SOURCE_SHA} .
+          docker build --file infrastructure/deployment/Dockerfile.verifier-dispatcher --tag skill-platform-verifier-dispatcher:${RELEASE_SOURCE_SHA} .
 
       - name: Package immutable release inputs
         shell: bash
@@ -108,13 +120,13 @@ jobs:
           set -euo pipefail
           mkdir -p release
           docker save \
-            skill-platform-api:${GITHUB_SHA} \
-            skill-platform-web:${GITHUB_SHA} \
-            skill-platform-worker:${GITHUB_SHA} \
-            skill-platform-verifier-dispatcher:${GITHUB_SHA} \
+            skill-platform-api:${RELEASE_SOURCE_SHA} \
+            skill-platform-web:${RELEASE_SOURCE_SHA} \
+            skill-platform-worker:${RELEASE_SOURCE_SHA} \
+            skill-platform-verifier-dispatcher:${RELEASE_SOURCE_SHA} \
             | gzip -n > release/images.tar.gz
 
-          epoch=$(git show -s --format=%ct "${GITHUB_SHA}")
+          epoch=$(git show -s --format=%ct "${RELEASE_SOURCE_SHA}")
           tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner \
             -cf - prisma/migrations prisma/schema.prisma scripts/apply-migrations.sh \
             | gzip -n > release/migrations.tar.gz
@@ -124,7 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RELEASE_SHA=${GITHUB_SHA} node scripts/generate-release-manifest.mjs
+          RELEASE_SHA=${RELEASE_SOURCE_SHA} node scripts/generate-release-manifest.mjs
           node scripts/verify-release-manifest.mjs
 
       - name: Verify image bundle can be restored without identity drift
@@ -132,10 +144,10 @@ jobs:
         run: |
           set -euo pipefail
           docker image rm -f \
-            skill-platform-api:${GITHUB_SHA} \
-            skill-platform-web:${GITHUB_SHA} \
-            skill-platform-worker:${GITHUB_SHA} \
-            skill-platform-verifier-dispatcher:${GITHUB_SHA}
+            skill-platform-api:${RELEASE_SOURCE_SHA} \
+            skill-platform-web:${RELEASE_SOURCE_SHA} \
+            skill-platform-worker:${RELEASE_SOURCE_SHA} \
+            skill-platform-verifier-dispatcher:${RELEASE_SOURCE_SHA}
           gzip -dc release/images.tar.gz | docker load
           node scripts/verify-release-manifest.mjs
 
@@ -181,7 +193,7 @@ jobs:
       - name: Upload provider-neutral release package
         uses: actions/upload-artifact@v4
         with:
-          name: pr3-release-package-${{ github.sha }}
+          name: pr3-release-package-${{ env.RELEASE_SOURCE_SHA }}
           path: |
             release/release-manifest.json
             release/images.tar.gz
