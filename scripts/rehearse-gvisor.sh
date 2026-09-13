@@ -75,47 +75,59 @@ set -e
 cleanup
 pass "memory exhaustion contained"
 
-# V9: hostile code attempts to create far more processes than the locked limit.
-# The runtime contract must expose the exact PID ceiling. Depending on how busybox
-# reacts to fork denial, the hostile process either remains alive at the ceiling or
-# exits after the runtime refuses another fork. Both are measured from the host.
+# V9: explicitly observe process denial while the parent remains alive. Node's
+# child_process API reports spawn failure without requiring another diagnostic
+# process inside the already-saturated sandbox.
 pid_name="${PREFIX}-pids"
-docker run -d --name "$pid_name" "${common[@]}" "$ALPINE_DIGEST" sh -c '
-  i=0
-  while [ "$i" -lt 128 ]; do
-    sleep 20 &
-    rc=$?
-    if [ "$rc" -ne 0 ]; then
-      echo "PID_DENIED:${i}" >&2
-      while :; do :; done
-    fi
-    i=$((i + 1))
-  done
-  echo "PID_UNBOUNDED:${i}" >&2
-  while :; do :; done
+docker run -d --name "$pid_name" "${common[@]}" "$NODE_DIGEST" node -e '
+  const { spawn } = require("node:child_process");
+  let created = 0;
+  let terminal = false;
+  const keepAlive = () => setInterval(() => {}, 1000);
+  const next = () => {
+    if (terminal) return;
+    if (created >= 128) {
+      terminal = true;
+      console.error(`PID_UNBOUNDED:${created}`);
+      keepAlive();
+      return;
+    }
+    const child = spawn("sleep", ["20"]);
+    let observed = false;
+    child.once("spawn", () => {
+      if (observed) return;
+      observed = true;
+      created += 1;
+      setTimeout(next, 20);
+    });
+    child.once("error", (error) => {
+      if (observed) return;
+      observed = true;
+      terminal = true;
+      console.error(`PID_DENIED:${created}:${error.code ?? error.message}`);
+      keepAlive();
+    });
+  };
+  next();
 ' >/dev/null
-sleep 2
 pids_limit="$(docker inspect "$pid_name" --format '{{.HostConfig.PidsLimit}}')"
 [[ "$pids_limit" == "32" ]] || fail "Docker PID limit contract changed: ${pids_limit}"
-running="$(docker inspect "$pid_name" --format '{{.State.Running}}')"
+for attempt in $(seq 1 50); do
+  pid_log="$(docker logs "$pid_name" 2>&1 || true)"
+  if grep -q 'PID_DENIED:' <<<"$pid_log"; then break; fi
+  if grep -q 'PID_UNBOUNDED:128' <<<"$pid_log"; then fail "hostile sandbox created all 128 children despite PID limit"; fi
+  running="$(docker inspect "$pid_name" --format '{{.State.Running}}')"
+  [[ "$running" == "true" ]] || fail "PID pressure parent exited before reporting containment"
+  sleep 0.1
+done
 pid_log="$(docker logs "$pid_name" 2>&1 || true)"
-if grep -q 'PID_UNBOUNDED:128' <<<"$pid_log"; then
-  fail "hostile sandbox created all 128 children despite PID limit"
-fi
-if [[ "$running" == "true" ]]; then
-  set +e
-  pid_count="$(docker stats --no-stream --format '{{.PIDs}}' "$pid_name" 2>/dev/null)"
-  stats_rc=$?
-  set -e
-  [[ $stats_rc -eq 0 && "$pid_count" =~ ^[0-9]+$ ]] || fail "host could not read cgroup PID count"
-  [[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"
-  [[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not exercise the process limit"
-  pass "process exhaustion contained at ${pid_count}/32 processes"
-else
-  grep -Eqi 'resource temporarily unavailable|can.t fork|cannot fork|PID_DENIED:' <<<"$pid_log" || fail "hostile process exited without observable fork denial"
-  pass "process exhaustion contained by explicit fork denial"
-fi
+grep -q 'PID_DENIED:' <<<"$pid_log" || fail "PID ceiling produced no explicit spawn denial"
+pid_count="$(docker stats --no-stream --format '{{.PIDs}}' "$pid_name" 2>/dev/null)"
+[[ "$pid_count" =~ ^[0-9]+$ ]] || fail "host could not read cgroup PID count"
+[[ "$pid_count" -le 32 ]] || fail "PID ceiling exceeded: observed ${pid_count} processes"
+[[ "$pid_count" -ge 2 ]] || fail "PID pressure workload did not exercise the process limit"
 cleanup
+pass "process exhaustion contained with explicit spawn denial at ${pid_count}/32 tasks"
 
 # V10: hidden verifier material is not on the default learner execution surface.
 mkdir -p "${RUNNER_TEMP:-/tmp}/${PREFIX}-hidden"
