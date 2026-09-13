@@ -1,28 +1,33 @@
 # Production Release Gate
 
-Use only:
+Final M12.10 status: **READY FOR PRODUCTION RELEASE**.
 
-- PASS
-- PASS WITH ACCEPTED DEBT
-- BLOCKED
+Release-candidate implementation evidence was executed on source SHA `37de8373b5fe83383d02e0016a2e007bff8de79e` with all seven mandatory workflows PASS.
 
-| Area | Status | Evidence |
-|---|---|---|
-| Product | BLOCKED | actual implementation pending |
-| UX | BLOCKED | actual implementation pending |
-| Architecture Compliance | BLOCKED | M3/M4 baseline recovery pending |
-| Domain | BLOCKED | actual implementation pending |
-| Data | BLOCKED | actual implementation pending |
-| AI | BLOCKED | actual implementation pending |
-| Security | BLOCKED | actual implementation pending |
-| Privacy | BLOCKED | actual implementation pending |
-| Reliability | BLOCKED | actual implementation pending |
-| Performance | BLOCKED | actual implementation pending |
-| Testing | BLOCKED | executable tests pending |
-| Observability | BLOCKED | actual implementation pending |
-| Deployment | BLOCKED | deployment pipeline pending |
-| Backup/Restore | BLOCKED | drill pending |
-| Maintainability | BLOCKED | actual implementation pending |
-| Operations | BLOCKED | runbook/deployment evidence pending |
+| Area | Status |
+|---|---|
+| Product | PASS |
+| UX | PASS |
+| Architecture Compliance | PASS |
+| Domain | PASS |
+| Data | PASS |
+| AI | PASS |
+| Security | PASS WITH ACCEPTED DEBT |
+| Privacy | PASS |
+| Reliability | PASS |
+| Performance | PASS |
+| Testing | PASS |
+| Observability | PASS WITH ACCEPTED DEBT |
+| Deployment | PASS WITH ACCEPTED DEBT |
+| Backup/Restore | PASS WITH ACCEPTED DEBT |
+| Maintainability | PASS WITH ACCEPTED DEBT |
+| Operations | PASS |
+| MVP Scope | PASS |
 
-A production release cannot be approved while any unresolved release blocker exists.
+Unresolved release blockers: **NONE**.
+
+Accepted debt and mandatory pre-live closure triggers are documented in `M12.10-PRODUCTION-RELEASE-GATE.md` and `DEPLOYMENT-TARGET.md`.
+
+Application readiness decision: **READY FOR PRODUCTION RELEASE**.
+
+Live traffic remains prohibited until provider/account/region, OpenTofu, immutable registry digests, secret manager/workload identity, managed PostgreSQL PITR/RPO, OTLP/alerts, selected-host runsc rehearsal, and production smoke are bound and recorded according to the production launch checklist.
