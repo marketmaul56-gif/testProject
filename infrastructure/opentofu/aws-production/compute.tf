@@ -74,8 +74,8 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
 
 data "aws_iam_policy_document" "ecs_execution_secrets" {
   statement {
-    effect  = "Allow"
-    actions = ["secretsmanager:GetSecretValue"]
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
     resources = [for secret in aws_secretsmanager_secret.runtime : secret.arn]
   }
 }
